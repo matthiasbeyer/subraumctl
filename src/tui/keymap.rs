@@ -9,6 +9,7 @@ pub struct KeyBinding {
 }
 
 const GLOBAL: &[KeyBinding] = &[
+    #[cfg(feature = "tui-mouse")]
     KeyBinding {
         keys: "Mouse",
         action: "click/select, scroll",
@@ -60,6 +61,7 @@ const GLOBAL: &[KeyBinding] = &[
 ];
 
 const FOOTER_GLOBAL: &[KeyBinding] = &[
+    #[cfg(feature = "tui-mouse")]
     KeyBinding {
         keys: "Mouse",
         action: "select/scroll, double-click send",

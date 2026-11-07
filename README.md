@@ -22,6 +22,11 @@ Rust CLI and keyboard-driven TUI for the subraum MQTT control system.
 
 Issues are disabled. If you find an issue, send patches.
 
+# Build features
+
+TUI mouse interaction is optional and disabled by default. Build with
+`--features tui-mouse` to include it.
+
 # License
 
 WTFPL

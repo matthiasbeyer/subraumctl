@@ -2,32 +2,33 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+#[cfg(feature = "tui-mouse")]
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+#[cfg(feature = "tui-mouse")]
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Color;
 use throbber_widgets_tui::ThrobberState;
 use tokio::sync::mpsc::UnboundedSender;
-use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 use tui_logger::TuiWidgetState;
 
 use crate::action::{
     Action, ControlCommand, DmxAnimation, DmxGroup, Outlet, RadiationTarget, SmoothieRelay,
-    SobSound, Transport, TOPIC_ALERT_CONDITION, TOPIC_KNOB_GET_PREFIX, TOPIC_KNOB_SET_PREFIX,
-    TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX,
+    SobSound, TOPIC_ALERT_CONDITION, TOPIC_KNOB_GET_PREFIX, TOPIC_KNOB_SET_PREFIX,
+    TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX, Transport,
 };
 use crate::cli::TuiView;
 use crate::color::{Theme, ThemePreset, ThemeRole};
-use crate::decode::{parse_alert, parse_bool, AlertCondition, AlertState};
-use crate::knob::{format_value, Knob, KNOB_SPECS};
+use crate::decode::{AlertCondition, AlertState, parse_alert, parse_bool};
+use crate::knob::{KNOB_SPECS, Knob, format_value};
 use crate::mqtt::{MqttCommand, MqttEvent};
 use crate::smoothiesaur::{HttpCommand, HttpEvent, SmoothieStatus};
+use crate::tui::TuiOptions;
 use crate::tui::safe_mode::{ConfirmChoice, PendingCommand};
 use crate::tui::theme::{ColorPicker, PickerOutcome};
-use crate::tui::traffic::{sections_for_action, TrafficDirection, TrafficEntry, TrafficLog};
-use crate::tui::TuiOptions;
+use crate::tui::traffic::{TrafficDirection, TrafficEntry, TrafficLog, sections_for_action};
 use crate::white_light;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -342,6 +343,7 @@ pub struct App {
     pub smoothie: SmoothieState,
     pub theme_view: ThemeViewState,
     pub text_input: Option<TextInputState>,
+    #[cfg(feature = "tui-mouse")]
     last_mouse_click: Option<(Instant, u16, u16, Section)>,
 }
 
@@ -436,6 +438,7 @@ impl App {
             },
             theme_view: ThemeViewState::default(),
             text_input: None,
+            #[cfg(feature = "tui-mouse")]
             last_mouse_click: None,
         };
 
@@ -467,6 +470,7 @@ impl App {
         });
     }
 
+    #[cfg(feature = "tui-mouse")]
     pub fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) {
         if self.popup.is_some() {
             if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
@@ -553,6 +557,7 @@ impl App {
         self.handle_content_click(mouse, body_columns[1], dragging, double_click);
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn is_double_click(&mut self, mouse: MouseEvent) -> bool {
         let now = Instant::now();
         let previous = self
@@ -566,6 +571,7 @@ impl App {
         })
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn handle_popup_mouse(&mut self, mouse: MouseEvent, area: Rect) {
         let Some(popup) = self.popup.take() else {
             return;
@@ -610,6 +616,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn handle_scroll(&mut self, mouse: MouseEvent, area: Rect, direction: i32) {
         if self.popup.is_some() {
             if let Some(Popup::Help { scroll }) = &mut self.popup {
@@ -669,6 +676,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn select_traffic_row(&mut self, row: u16, area: Rect) {
         if row <= area.y || row >= area.y + area.height.saturating_sub(1) {
             return;
@@ -698,6 +706,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn handle_content_click(
         &mut self,
         mouse: MouseEvent,
@@ -2532,6 +2541,7 @@ impl App {
     }
 }
 
+#[cfg(feature = "tui-mouse")]
 fn outlet_action_at(area: Rect, column: u16) -> Option<usize> {
     let inner_x = area.x.saturating_add(1);
     let inner_width = area.width.saturating_sub(2);
@@ -2549,6 +2559,7 @@ fn outlet_action_at(area: Rect, column: u16) -> Option<usize> {
     }
 }
 
+#[cfg(feature = "tui-mouse")]
 fn white_light_row_index(area: Rect, row: u16) -> Option<usize> {
     let inner_top = area.y.saturating_add(1);
     let inner_bottom = area.bottom().saturating_sub(1);
@@ -2559,6 +2570,7 @@ fn white_light_row_index(area: Rect, row: u16) -> Option<usize> {
     }
 }
 
+#[cfg(feature = "tui-mouse")]
 fn popup_button_choice(popup: &Popup, mouse: MouseEvent, area: Rect) -> Option<ConfirmChoice> {
     let (percent_x, percent_y, button_line, confirm_width) = match popup {
         Popup::Quit { .. } => (50, 30, 2, 8),
@@ -2590,6 +2602,7 @@ fn popup_button_choice(popup: &Popup, mouse: MouseEvent, area: Rect) -> Option<C
     }
 }
 
+#[cfg(feature = "tui-mouse")]
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -2610,6 +2623,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     horizontal[1]
 }
 
+#[cfg(feature = "tui-mouse")]
 fn layout_areas(
     area: Rect,
     show_log: bool,
@@ -2712,6 +2726,7 @@ mod tests {
         assert_eq!(next_in(&[], 3, true), 3);
     }
 
+    #[cfg(feature = "tui-mouse")]
     fn test_app() -> App {
         let (mqtt_tx, _) = tokio::sync::mpsc::unbounded_channel();
         let (http_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -2729,6 +2744,7 @@ mod tests {
         App::new(options, mqtt_tx, http_tx)
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn mouse_click_on_sidebar_changes_section() {
         let mut app = test_app();
@@ -2745,6 +2761,7 @@ mod tests {
         assert_eq!(app.zone, FocusZone::Sidebar);
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn outlet_mouse_click_can_switch_from_off_back_to_on() {
         let mut app = test_app();
@@ -2777,6 +2794,7 @@ mod tests {
         assert_eq!(app.outlets.action, 1);
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn white_light_mouse_rows_skip_table_border_and_header() {
         let table = Rect::new(10, 20, 40, 10);
@@ -2787,6 +2805,7 @@ mod tests {
         assert_eq!(white_light_row_index(table, 29), None);
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn mouse_click_on_safe_mode_confirm_disables_it() {
         let mut app = test_app();
@@ -2811,6 +2830,7 @@ mod tests {
         assert!(app.popup.is_none());
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn double_click_on_alert_sends_but_single_click_only_selects() {
         let mut app = test_app();
@@ -2832,6 +2852,7 @@ mod tests {
         assert!(!app.traffic.filtered(Section::Alerts).is_empty());
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn double_click_command_still_requires_safe_mode_confirmation() {
         let mut app = test_app();
@@ -2852,6 +2873,7 @@ mod tests {
         assert!(matches!(app.popup, Some(Popup::ConfirmCommand { .. })));
     }
 
+    #[cfg(feature = "tui-mouse")]
     #[test]
     fn mouse_drag_adjusts_a_slider() {
         let mut app = test_app();

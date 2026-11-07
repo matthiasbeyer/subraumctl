@@ -18,15 +18,19 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event};
+#[cfg(feature = "tui-mouse")]
+use crossterm::event::Event;
+#[cfg(feature = "tui-mouse")]
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use eyre::Result;
-use ratatui::backend::CrosstermBackend;
-use ratatui::layout::Rect;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+#[cfg(feature = "tui-mouse")]
+use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 
@@ -56,7 +60,10 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     crate::logging::init_tui(options.verbose)?;
     let mut terminal = TerminalGuard::enter()?;
 
+    #[cfg(feature = "tui-mouse")]
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Event>();
+    #[cfg(not(feature = "tui-mouse"))]
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<crossterm::event::KeyEvent>();
     events::spawn_input_thread(ui_tx);
 
     let (mqtt_tx, mqtt_rx) = mpsc::unbounded_channel::<MqttCommand>();
@@ -122,13 +129,20 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             .draw(|frame| ui::draw(frame, &mut app))?;
 
         tokio::select! {
-            Some(event) = ui_rx.recv() => match event {
-                Event::Key(key) => app.handle_key(key),
-                Event::Mouse(mouse) => {
-                    let size = terminal.terminal_mut().size()?;
-                    app.handle_mouse(mouse, Rect::new(0, 0, size.width, size.height));
+            Some(event) = ui_rx.recv() => {
+                #[cfg(feature = "tui-mouse")]
+                {
+                    match event {
+                        Event::Key(key) => app.handle_key(key),
+                        Event::Mouse(mouse) => {
+                            let size = terminal.terminal_mut().size()?;
+                            app.handle_mouse(mouse, Rect::new(0, 0, size.width, size.height));
+                        }
+                        _ => {}
+                    }
                 }
-                _ => {}
+                #[cfg(not(feature = "tui-mouse"))]
+                app.handle_key(event);
             },
             Some(event) = mqtt_event_rx.recv() => app.handle_mqtt_event(event),
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
@@ -158,13 +172,20 @@ impl TerminalGuard {
         std::panic::set_hook(Box::new(move |info| {
             let _ = disable_raw_mode();
             let mut stdout = io::stdout();
+            #[cfg(feature = "tui-mouse")]
             let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
+            #[cfg(not(feature = "tui-mouse"))]
+            let _ = execute!(stdout, LeaveAlternateScreen, Show);
             previous_hook(info);
         }));
 
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        if let Err(err) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Hide) {
+        #[cfg(feature = "tui-mouse")]
+        let enter_result = execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Hide);
+        #[cfg(not(feature = "tui-mouse"))]
+        let enter_result = execute!(stdout, EnterAlternateScreen, Hide);
+        if let Err(err) = enter_result {
             let _ = disable_raw_mode();
             return Err(err.into());
         }
@@ -174,7 +195,10 @@ impl TerminalGuard {
             Err(err) => {
                 let _ = disable_raw_mode();
                 let mut stdout = io::stdout();
+                #[cfg(feature = "tui-mouse")]
                 let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
+                #[cfg(not(feature = "tui-mouse"))]
+                let _ = execute!(stdout, LeaveAlternateScreen, Show);
                 return Err(err.into());
             }
         };
@@ -189,12 +213,15 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
+        #[cfg(feature = "tui-mouse")]
         let _ = execute!(
             self.terminal.backend_mut(),
             DisableMouseCapture,
             LeaveAlternateScreen,
             Show
         );
+        #[cfg(not(feature = "tui-mouse"))]
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen, Show);
         let _ = self.terminal.show_cursor();
     }
 }
