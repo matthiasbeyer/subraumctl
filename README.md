@@ -12,6 +12,8 @@ Rust CLI and keyboard-driven TUI for the subraum MQTT control system.
 
 [Heating controls and per-room status in the TUI and MCP](docs/heizung.md)
 
+[Room climate readings in the CLI, TUI and MCP](docs/climate.md)
+
 [Pizzamat ordering in the TUI and MCP](docs/pizzamat.md)
 
 # Issues

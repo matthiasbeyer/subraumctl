@@ -105,6 +105,21 @@ const SIDEBAR: &[KeyBinding] = &[
     },
 ];
 
+const CONTENT_CLIMATE: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "← → / m",
+        action: "sampling mode",
+    },
+    KeyBinding {
+        keys: "Enter",
+        action: "refresh",
+    },
+    KeyBinding {
+        keys: "↑ ↓",
+        action: "scroll rooms",
+    },
+];
+
 const CONTENT_OVERVIEW: &[KeyBinding] = &[
     KeyBinding {
         keys: "↑ ↓",
@@ -366,6 +381,7 @@ pub fn section_bindings(section: Section) -> &'static [KeyBinding] {
         Section::Smoothie => CONTENT_SMOOTHIE,
         Section::Theme => CONTENT_THEME,
         Section::Heizung => CONTENT_HEIZUNG,
+        Section::Climate => CONTENT_CLIMATE,
         Section::Pizzamat => &[
             KeyBinding {
                 keys: "↑ ↓",

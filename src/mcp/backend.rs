@@ -15,6 +15,11 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    fn climate(
+        &self,
+        mode: crate::influx::Mode,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn heizung(
         &self,
         request: crate::heizung::Request,
@@ -42,6 +47,7 @@ pub(super) struct DeviceBackend {
     mqtt: MqttOptions,
     smoothie_url: String,
     heizung: crate::heizung::Options,
+    influx: crate::influx::Options,
     pizzamat: crate::pizzamat::Options,
     http: reqwest::Client,
     dry_run: bool,
@@ -65,6 +71,7 @@ impl DeviceBackend {
             mqtt,
             smoothie_url: global.smoothiesaur_url.clone(),
             heizung: crate::heizung::Options::from_global(global),
+            influx: crate::influx::Options::from_global(global),
             pizzamat: crate::pizzamat::Options::from_global(global),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
@@ -77,6 +84,25 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    async fn climate(
+        &self,
+        mode: crate::influx::Mode,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        if self.dry_run {
+            return Ok(crate::climate::preview(mode, crate::influx::now_ms()?));
+        }
+        tokio::select! {
+            result = crate::climate::read(&self.influx, mode) => result.map(|snapshot| snapshot.json()),
+            _ = context.ct.cancelled() => Err(eyre!("request cancelled")),
+        }
+    }
+
     async fn heizung(
         &self,
         request: crate::heizung::Request,

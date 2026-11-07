@@ -23,6 +23,7 @@ fn app() -> (App, UnboundedReceiver<Request>) {
                 theme: Theme::preset(ThemePreset::Dark),
                 theme_preset: ThemePreset::Dark,
                 smoothie_url: String::new(),
+                influx: crate::influx::Options::default(),
                 pizzamat: Options {
                     user: "alice".into(),
                     ..Options::default()
@@ -38,6 +39,7 @@ fn app() -> (App, UnboundedReceiver<Request>) {
             http,
             pizza,
             heizung,
+            mpsc::unbounded_channel().0,
         ),
         rx,
     )

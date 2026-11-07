@@ -1,6 +1,7 @@
 //! Reviewed tool registrations. Each tool declares its own permission boundary.
 
 mod choice;
+mod climate;
 mod controls;
 mod heizung;
 mod lighting;
@@ -100,6 +101,7 @@ pub(super) fn register<B: super::backend::Backend>(
     controls::register(server, backend.clone())?;
     opt_in::register(server, backend.clone())?;
     heizung::register(server, backend.clone())?;
+    climate::register(server, backend.clone())?;
     pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(

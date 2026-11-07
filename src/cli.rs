@@ -20,7 +20,8 @@ use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
     version,
     about = "Control the subraum over MQTT and EDI AMQP",
     long_about = "subraumctl controls the subraum lights, outlets, alerts, animation knobs and \
-smoothiesaur over MQTT (TCP) and HTTP, and heating and Pizzamat food orders over EDI AMQP. \
+smoothiesaur over MQTT (TCP) and HTTP, heating and Pizzamat food orders over EDI AMQP, \
+and room climate readings over InfluxDB HTTP. \
 It also provides a keyboard-driven ratatui TUI \
 with safe mode, automatic reconnects, a live traffic pane and an application log pane.",
     after_help = "Broker: normal MQTT over TCP (tcp:// or ssl://), no WebSockets.\n\
@@ -90,6 +91,14 @@ pub struct GlobalArgs {
         default_value = DEFAULT_SMOOTHIE_URL
     )]
     pub smoothiesaur_url: String,
+
+    /// InfluxDB v1 query endpoint for sensor readings
+    #[arg(long, global = true, env = "SUBRAUMCTL_INFLUX_URL", default_value = crate::influx::DEFAULT_URL)]
+    pub influx_url: String,
+
+    /// InfluxDB HTTP timeout in seconds (1..=120)
+    #[arg(long, global = true, env = "SUBRAUMCTL_INFLUX_TIMEOUT", default_value_t = 3, value_parser = clap::value_parser!(u64).range(1..=120))]
+    pub influx_timeout: u64,
 
     /// Heating EDI AMQP endpoint (independent of --broker)
     #[arg(long, global = true, env = "SUBRAUMCTL_HEIZUNG_AMQP_URL", default_value = crate::heizung::DEFAULT_AMQP_URL)]
@@ -205,6 +214,12 @@ pub enum CliCommand {
         after_help = "Examples:\n  subraumctl heizung rooms\n  subraumctl heizung status\n  subraumctl heizung get hack make\n  subraumctl heizung set hack make 21.5 -d 120\n  subraumctl heizung set --all 20\n  subraumctl heizung status hack --watch"
     )]
     Heizung(HeizungArgs),
+
+    /// Read measured room temperature and humidity from InfluxDB
+    #[command(
+        after_help = "Examples:\n  subraumctl climate status\n  subraumctl --json climate status --mode latest\n  subraumctl climate status --watch --interval 30"
+    )]
+    Climate(ClimateArgs),
 
     /// Connect, print broker information and the alert condition
     Status,
@@ -444,6 +459,27 @@ pub enum SmoothieCommand {
 }
 
 #[derive(Args, Debug)]
+pub struct ClimateArgs {
+    #[command(subcommand)]
+    pub command: ClimateCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ClimateCommand {
+    /// Read all reported locations (15-minute averages by default)
+    #[command(alias = "get")]
+    Status {
+        #[arg(long, value_enum, default_value_t = crate::influx::Mode::Average)]
+        mode: crate::influx::Mode,
+        #[arg(long)]
+        watch: bool,
+        /// Seconds between completed reads
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        interval: u64,
+    },
+}
+
+#[derive(Args, Debug)]
 pub struct HeizungArgs {
     #[command(subcommand)]
     pub command: HeizungCommand,
@@ -568,6 +604,8 @@ pub enum TuiView {
     Pizzamat,
     #[value(name = "heizung")]
     Heizung,
+    /// Measured room temperature and humidity
+    Climate,
 }
 
 #[derive(Args, Debug)]

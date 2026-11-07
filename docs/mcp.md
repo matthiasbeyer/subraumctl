@@ -8,8 +8,9 @@ equipment through unrestricted CLI/MQTT access. Only explicitly registered tools
 are available, and config permissions restrict both discovery and execution.
 
 There is no arbitrary subscription, watch/monitor, file-reading, shell, or generic
-CLI tool. Device reads use fixed, known status topics or the bounded heating EDI API
-and return selected decoded fields, never raw payloads or unknown device IDs. Broker addresses,
+CLI tool. Device reads use fixed status topics, the bounded heating EDI API or
+fixed climate queries. They return selected decoded fields, including climate
+location tags, rather than raw payloads. Broker addresses,
 credentials, HTTP response bodies, and raw backend errors are not tool results.
 Allowed status fields still describe the space; set their groups to `x` if that
 information should not be shared.
@@ -82,6 +83,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `system` | — | `system_telinit` | `w` |
 | `knob` | `knob_list`, `knob_get` | `knob_set` | `w` |
 | `heizung` | `heizung_rooms`, `heizung_get`, `heizung_status` | `heizung_set` | `w` |
+| `climate` | `climate_status` | — | `r` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `status` | `status` | — | `r` |
@@ -99,6 +101,12 @@ or `{"all":true,"temperature":20}`. Reads return targets and remaining seconds,
 not measured temperatures. Heating uses its own startup-configured AMQP endpoint
 and `--heizung-timeout`, independently of MQTT `--broker`/`--wait`.
 See [heating commands and protocol](heizung.md) for details.
+
+`climate_status` accepts an optional `mode`: `average` (15-minute means, default)
+or `latest` (includes per-metric sample timestamps). It returns measured room
+temperature and humidity by location. It uses the startup-configured
+`--influx-url` and `--influx-timeout`, independently of MQTT and heating.
+See [climate readings and protocol](climate.md).
 
 Live MQTT device reads are one-shot snapshots, using retained messages where available.
 `--wait` bounds collection (default 3 seconds, clamped to 1–30 in MCP); missing

@@ -112,12 +112,76 @@ pub async fn run(cli: Cli) -> Result<()> {
         },
         CliCommand::Status => status(&global),
         CliCommand::Heizung(args) => heizung(&global, args.command).await,
+        CliCommand::Climate(args) => climate(&global, args.command).await,
         CliCommand::Publish(args) => publish(&global, args).await,
         CliCommand::Subscribe(args) => subscribe_command(&global, args).await,
         CliCommand::Monitor(args) => monitor(&global, args).await,
         CliCommand::Tui(args) => run_tui(global.clone(), args).await,
         CliCommand::Man(args) => render_man(args),
         CliCommand::Completions(args) => render_completions(args),
+    }
+}
+
+async fn climate(global: &GlobalArgs, command: crate::cli::ClimateCommand) -> Result<()> {
+    let crate::cli::ClimateCommand::Status {
+        mode,
+        watch,
+        interval,
+    } = command;
+    if global.dry_run {
+        let preview = crate::climate::preview(mode, crate::influx::now_ms()?);
+        if global.json {
+            println!("{preview}");
+        } else if !global.quiet {
+            println!(
+                "dry-run: InfluxDB climate {}",
+                preview["query"].as_str().unwrap()
+            );
+        }
+        return Ok(());
+    }
+    let options = crate::influx::Options::from_global(global);
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
+    loop {
+        let snapshot = tokio::select! {
+            result = crate::climate::read(&options, mode) => result?,
+            result = &mut shutdown => { result?; return Ok(()); }
+        };
+        if global.json {
+            println!("{}", snapshot.json());
+        } else if !global.quiet {
+            println!("Climate — {}", mode.label());
+            if snapshot.rooms.is_empty() {
+                println!("No climate data");
+            }
+            for room in &snapshot.rooms {
+                let age = |time: Option<u64>| {
+                    time.map(|t| {
+                        format!(
+                            " ({}s old)",
+                            snapshot.queried_at_ms.saturating_sub(t) / 1000
+                        )
+                    })
+                    .unwrap_or_default()
+                };
+                println!(
+                    "{}: {}{}, {}{}",
+                    room.location,
+                    temp_text(room.temperature_celsius),
+                    age(room.temperature_time_ms),
+                    opt_percent(room.humidity_percent),
+                    age(room.humidity_time_ms)
+                );
+            }
+        }
+        if !watch {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
+            result = &mut shutdown => { result?; return Ok(()); }
+        }
     }
 }
 
@@ -994,6 +1058,7 @@ async fn run_tui(global: GlobalArgs, args: TuiArgs) -> Result<()> {
         smoothie_url: global.smoothiesaur_url.clone(),
         pizzamat: crate::pizzamat::Options::from_global(&global),
         heizung: crate::heizung::Options::from_global(&global),
+        influx: crate::influx::Options::from_global(&global),
         verbose: global.verbose,
         dry_run: global.dry_run,
     };

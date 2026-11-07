@@ -10,10 +10,12 @@
 
 pub mod action;
 pub mod cli;
+pub mod climate;
 pub mod color;
 pub mod commands;
 pub mod decode;
 pub mod heizung;
+pub mod influx;
 pub mod knob;
 pub mod logging;
 #[cfg(feature = "mcp")]

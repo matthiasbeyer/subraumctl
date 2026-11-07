@@ -17,6 +17,13 @@ pub(super) struct RecordingBackend(
 );
 
 impl backend::Backend for RecordingBackend {
+    async fn climate(
+        &self,
+        mode: crate::influx::Mode,
+        _: RequestContext<RoleServer>,
+    ) -> eyre::Result<Value> {
+        Ok(json!({"mode": mode.name(), "rooms": []}))
+    }
     async fn heizung(
         &self,
         request: crate::heizung::Request,
@@ -272,6 +279,101 @@ async fn heating_validates_before_io_and_enforces_permissions() {
 }
 
 #[tokio::test]
+async fn climate_modes_permissions_and_dry_runs() {
+    use clap::Parser;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        for permission in ["r", "w", "x"] {
+            let mut global = crate::cli::Cli::try_parse_from([
+                "subraumctl",
+                "--influx-url",
+                "invalid://PRIVATE",
+                "--dry-run",
+                "climate",
+                "status",
+            ])
+            .unwrap()
+            .global;
+            let mut server = McpServer::new(
+                toml::from_str(&format!("[tools]\nclimate = '{permission}'")).unwrap(),
+            );
+            tools::register(
+                &mut server,
+                Arc::new(backend::DeviceBackend::new(&global).unwrap()),
+            )
+            .unwrap();
+            let (mut client, task) = start(server);
+            client.initialize().await;
+            let listed = client.request("tools/list", json!({})).await;
+            let tool = listed["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == "climate_status");
+            assert_eq!(tool.is_some(), permission != "x");
+            if let Some(tool) = tool {
+                assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            }
+            for (args, mode) in [
+                (json!({}), "average"),
+                (json!({"mode": "average"}), "average"),
+                (json!({"mode": "latest"}), "latest"),
+            ] {
+                let result = client
+                    .request(
+                        "tools/call",
+                        json!({"name": "climate_status", "arguments": args}),
+                    )
+                    .await;
+                if permission == "x" {
+                    assert_eq!(result["error"]["code"], -32601);
+                } else {
+                    assert_eq!(result["result"]["structuredContent"]["mode"], mode);
+                    assert_eq!(result["result"]["structuredContent"]["dry_run"], true);
+                }
+            }
+            if permission != "x" {
+                for args in [
+                    json!({"mode": "invalid"}),
+                    json!({"query": "DROP DATABASE climate"}),
+                    json!({"url": "http://elsewhere"}),
+                    json!({"watch": true}),
+                ] {
+                    let result = client
+                        .request(
+                            "tools/call",
+                            json!({"name": "climate_status", "arguments": args}),
+                        )
+                        .await;
+                    assert_eq!(result["result"]["isError"], true);
+                }
+            }
+            drop(client);
+            task.await.unwrap();
+            if permission == "r" {
+                global.dry_run = false;
+                let mut server = McpServer::new(Config::default());
+                tools::register(
+                    &mut server,
+                    Arc::new(backend::DeviceBackend::new(&global).unwrap()),
+                )
+                .unwrap();
+                let (mut client, task) = start(server);
+                client.initialize().await;
+                let result = client
+                    .request("tools/call", json!({"name": "climate_status"}))
+                    .await;
+                assert_eq!(result["result"]["isError"], true);
+                assert!(!result.to_string().contains("PRIVATE"));
+                drop(client);
+                task.await.unwrap();
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn heating_dry_run_and_connection_errors_hide_endpoint_credentials() {
     use clap::Parser;
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -517,7 +619,7 @@ async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments(
         let listed = client.request("tools/list", json!({})).await;
         let names: Vec<_> = listed["result"]["tools"].as_array().unwrap().iter()
             .map(|tool| tool["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["alert_led", "heizung_get", "heizung_rooms", "heizung_status", "knob_get", "knob_list", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
+        assert_eq!(names, ["alert_led", "climate_status", "heizung_get", "heizung_rooms", "heizung_status", "knob_get", "knob_list", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
         for name in names {
             let arguments = if name == "knob_get" { json!({"knob": "cx"}) } else { json!({}) };
             let result = client.request("tools/call", json!({"name": name, "arguments": arguments})).await;

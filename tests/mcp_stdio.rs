@@ -83,6 +83,7 @@ fn real_stdio_keeps_startup_warnings_off_the_protocol_stream() {
             "alert_led",
             "alert_radiation",
             "alert_sob",
+            "climate_status",
             "dmx",
             "heizung_get",
             "heizung_rooms",

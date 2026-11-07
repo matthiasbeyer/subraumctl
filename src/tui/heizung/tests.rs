@@ -29,6 +29,7 @@ fn app() -> (
                 theme_preset: ThemePreset::Dark,
                 smoothie_url: String::new(),
                 pizzamat: crate::pizzamat::Options::default(),
+                influx: crate::influx::Options::default(),
                 heizung: Options {
                     amqp_url: "invalid://PRIVATE".into(),
                     timeout: Duration::from_secs(1),
@@ -40,6 +41,7 @@ fn app() -> (
             http,
             pizza,
             heizung,
+            mpsc::unbounded_channel().0,
         ),
         rx,
         mqtt_rx,
@@ -310,6 +312,8 @@ fn global_shortcuts_sidebar_and_status_rendering_remain_consistent() {
     assert_eq!(app.section, Section::Overview);
     app.zone = FocusZone::Sidebar;
     press(&mut app, KeyCode::End);
+    assert_eq!(app.section, Section::Climate);
+    press(&mut app, KeyCode::Up);
     assert_eq!(app.section, Section::Heizung);
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.zone, FocusZone::Content);

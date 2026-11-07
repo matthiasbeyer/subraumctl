@@ -1,6 +1,7 @@
 //! Interactive TUI entry point and terminal lifecycle.
 
 mod app;
+mod climate;
 mod events;
 mod heizung;
 mod keymap;
@@ -41,6 +42,7 @@ pub struct TuiOptions {
     pub smoothie_url: String,
     pub pizzamat: crate::pizzamat::Options,
     pub heizung: crate::heizung::Options,
+    pub influx: crate::influx::Options,
     pub verbose: u8,
     pub dry_run: bool,
 }
@@ -77,7 +79,15 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         heizung_rx,
         heizung_event_tx,
     );
-    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx, heizung_tx);
+    let (climate_tx, climate_rx) = mpsc::unbounded_channel();
+    let (climate_event_tx, mut climate_event_rx) = mpsc::unbounded_channel();
+    climate::spawn_worker(
+        options.influx.clone(),
+        options.dry_run,
+        climate_rx,
+        climate_event_tx,
+    );
+    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx);
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -91,6 +101,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
             Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
             Some(event) = heizung_event_rx.recv() => app.handle_heizung_event(event),
+            Some(event) = climate_event_rx.recv() => app.handle_climate_event(event),
             _ = ticker.tick() => app.on_tick(),
         }
 
