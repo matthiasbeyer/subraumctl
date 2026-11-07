@@ -5,10 +5,10 @@
 
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind, MouseEventKind};
 use tokio::sync::mpsc::UnboundedSender;
 
-pub fn spawn_input_thread(tx: UnboundedSender<KeyEvent>) {
+pub fn spawn_input_thread(tx: UnboundedSender<Event>) {
     std::thread::Builder::new()
         .name("subraumctl-input".to_string())
         .spawn(move || {
@@ -22,7 +22,18 @@ pub fn spawn_input_thread(tx: UnboundedSender<KeyEvent>) {
                             if key.kind == KeyEventKind::Press
                                 || key.kind == KeyEventKind::Repeat =>
                         {
-                            let _ = tx.send(key);
+                            let _ = tx.send(Event::Key(key));
+                        }
+                        Ok(Event::Mouse(mouse))
+                            if matches!(
+                                mouse.kind,
+                                MouseEventKind::Down(_)
+                                    | MouseEventKind::Drag(_)
+                                    | MouseEventKind::ScrollUp
+                                    | MouseEventKind::ScrollDown
+                            ) =>
+                        {
+                            let _ = tx.send(Event::Mouse(mouse));
                         }
                         // Resizes need no handling: the TUI redraws on its
                         // tick and ratatui re-reads the terminal size then.

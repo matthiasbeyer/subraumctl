@@ -18,14 +18,15 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::KeyEvent;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use eyre::Result;
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
+use ratatui::Terminal;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 
@@ -55,7 +56,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     crate::logging::init_tui(options.verbose)?;
     let mut terminal = TerminalGuard::enter()?;
 
-    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<KeyEvent>();
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Event>();
     events::spawn_input_thread(ui_tx);
 
     let (mqtt_tx, mqtt_rx) = mpsc::unbounded_channel::<MqttCommand>();
@@ -121,7 +122,14 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             .draw(|frame| ui::draw(frame, &mut app))?;
 
         tokio::select! {
-            Some(key) = ui_rx.recv() => app.handle_key(key),
+            Some(event) = ui_rx.recv() => match event {
+                Event::Key(key) => app.handle_key(key),
+                Event::Mouse(mouse) => {
+                    let size = terminal.terminal_mut().size()?;
+                    app.handle_mouse(mouse, Rect::new(0, 0, size.width, size.height));
+                }
+                _ => {}
+            },
             Some(event) = mqtt_event_rx.recv() => app.handle_mqtt_event(event),
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
             Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
@@ -150,13 +158,13 @@ impl TerminalGuard {
         std::panic::set_hook(Box::new(move |info| {
             let _ = disable_raw_mode();
             let mut stdout = io::stdout();
-            let _ = execute!(stdout, LeaveAlternateScreen, Show);
+            let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
             previous_hook(info);
         }));
 
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        if let Err(err) = execute!(stdout, EnterAlternateScreen, Hide) {
+        if let Err(err) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Hide) {
             let _ = disable_raw_mode();
             return Err(err.into());
         }
@@ -166,7 +174,7 @@ impl TerminalGuard {
             Err(err) => {
                 let _ = disable_raw_mode();
                 let mut stdout = io::stdout();
-                let _ = execute!(stdout, LeaveAlternateScreen, Show);
+                let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
                 return Err(err.into());
             }
         };
@@ -181,7 +189,12 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen, Show);
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+            Show
+        );
         let _ = self.terminal.show_cursor();
     }
 }

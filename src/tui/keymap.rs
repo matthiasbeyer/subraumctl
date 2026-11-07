@@ -10,6 +10,10 @@ pub struct KeyBinding {
 
 const GLOBAL: &[KeyBinding] = &[
     KeyBinding {
+        keys: "Mouse",
+        action: "click/select, scroll",
+    },
+    KeyBinding {
         keys: "Q",
         action: "quit now",
     },
@@ -56,6 +60,10 @@ const GLOBAL: &[KeyBinding] = &[
 ];
 
 const FOOTER_GLOBAL: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "Mouse",
+        action: "select/scroll, double-click send",
+    },
     KeyBinding {
         keys: "q",
         action: "back",
