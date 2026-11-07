@@ -55,6 +55,12 @@ pub fn spawn_worker(
 
 impl App {
     pub(super) fn maybe_refresh_climate(&mut self) {
+        if self.graphs.climate.layout != crate::cli::GraphLayout::Table {
+            if self.section == Section::Climate {
+                self.refresh_graph(super::graphs::Domain::Climate, false);
+            }
+            return;
+        }
         if self.section == Section::Climate
             && self.options.connect
             && !self.climate.busy
@@ -89,6 +95,9 @@ impl App {
     }
 
     pub(super) fn handle_climate_key(&mut self, key: KeyEvent) {
+        if self.handle_graph_key(super::graphs::Domain::Climate, key) {
+            return;
+        }
         match key.code {
             KeyCode::Left | KeyCode::Right | KeyCode::Char('m') => {
                 self.climate.mode = self.climate.mode.next();
@@ -180,6 +189,8 @@ mod tests {
                     timeout: Duration::from_secs(1),
                 },
                 influx: Options::default(),
+                graph_minutes: 60,
+                graph_layout: crate::cli::GraphLayout::Table,
                 verbose: 0,
                 dry_run: false,
             },

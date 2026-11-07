@@ -10,6 +10,10 @@ use super::{focused_border, panel};
 use crate::{influx::WINDOW_MS, power::format_watts};
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+    if app.graphs.power.layout != crate::cli::GraphLayout::Table {
+        super::super::graphs::draw(frame, area, app, super::super::graphs::Domain::Power);
+        return;
+    }
     let state = &app.power;
     let areas = Layout::vertical([Constraint::Length(5), Constraint::Min(3)]).split(area);
     let refreshed = state.updated.map_or_else(
@@ -39,7 +43,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     } else if app.options.dry_run {
         "Dry-run: no HTTP requests".into()
     } else {
-        "←/→ or m: mode   Enter: refresh".into()
+        "m: mode   Enter: refresh   g: graphs".into()
     };
     frame.render_widget(
         Paragraph::new(format!(

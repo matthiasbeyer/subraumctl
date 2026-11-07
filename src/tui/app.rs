@@ -311,6 +311,7 @@ pub struct App {
     pub climate: super::climate::State,
     pub power_tx: UnboundedSender<crate::influx::Mode>,
     pub power: super::power::State,
+    pub graphs: super::graphs::Graphs,
     pub should_quit: bool,
     pub section: Section,
     pub zone: FocusZone,
@@ -357,6 +358,7 @@ impl App {
         let theme_preset = options.theme_preset;
 
         let mut app = Self {
+            graphs: super::graphs::Graphs::new(options.graph_minutes, options.graph_layout),
             options,
             mqtt_tx,
             http_tx,

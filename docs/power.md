@@ -29,6 +29,29 @@ readings are `? W`, not zero.
 still work. `--dry-run` prevents HTTP requests. MQTT `c/d/r` shortcuts retain
 their normal meaning. Reads and decoded responses appear in the traffic pane.
 
+### History graphs (TUI only)
+
+```sh
+subraumctl tui --view power --graph-layout overlay --graph-minutes 360
+subraumctl tui --view power --graph-layout separate --graph-minutes 1440
+```
+
+**g** cycles table → colored overlay of L1/L2/L3/Total → separate charts → table.
+**+ / -** adjusts the history window, **↑/↓** scrolls separate charts, and **Enter**
+refreshes. Graphs have named legends and auto-scaled watt axes, including negative
+values; Total is read from `P∑`, never calculated from the phases.
+
+`--graph-minutes` sets any whole-minute window from 1 to 43200 (default: 60).
+`--graph-layout` defaults to `table`; `SUBRAUMCTL_GRAPH_MINUTES` and
+`SUBRAUMCTL_GRAPH_LAYOUT` set persistent startup defaults. History is read from
+InfluxDB using roughly 600 mean buckets per series, with gaps for missing data.
+The table's average/latest setting does not affect graphs. Active graphs refresh
+every 30 seconds; failures retain the previous graph with its original range and
+a **STALE** label. The x-axis shows minutes relative to the query end, with its age.
+
+The same [graph controls and offline/dry-run behavior](climate.md#history-graphs-tui-only)
+apply to climate. Each section remembers its window and layout for the session.
+
 ## CLI
 
 ```sh

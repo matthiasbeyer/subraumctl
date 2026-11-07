@@ -54,6 +54,12 @@ pub fn spawn_worker(
 
 impl App {
     pub(super) fn maybe_refresh_power(&mut self) {
+        if self.graphs.power.layout != crate::cli::GraphLayout::Table {
+            if self.section == Section::Power {
+                self.refresh_graph(super::graphs::Domain::Power, false);
+            }
+            return;
+        }
         if self.section == Section::Power
             && self.options.connect
             && !self.power.busy
@@ -88,6 +94,9 @@ impl App {
     }
 
     pub(super) fn handle_power_key(&mut self, key: KeyEvent) {
+        if self.handle_graph_key(super::graphs::Domain::Power, key) {
+            return;
+        }
         match key.code {
             KeyCode::Left | KeyCode::Right | KeyCode::Char('m') => {
                 self.power.mode = self.power.mode.next();
@@ -170,6 +179,8 @@ mod tests {
                     timeout: Duration::from_secs(1),
                 },
                 influx: Options::default(),
+                graph_minutes: 60,
+                graph_layout: crate::cli::GraphLayout::Table,
                 verbose: 0,
                 dry_run: false,
             },

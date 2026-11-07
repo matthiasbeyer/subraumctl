@@ -643,6 +643,19 @@ pub enum TuiView {
 rgb(...), hsl(...) and bare r,g,b or hex values. Alpha is ignored."
 )]
 pub struct TuiArgs {
+    /// Climate/power history window in minutes (1..=43200); +/- adjusts in the TUI
+    #[arg(long, env = "SUBRAUMCTL_GRAPH_MINUTES", default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..=43200))]
+    pub graph_minutes: u64,
+
+    /// Initial climate/power presentation; g cycles table, overlay and separate charts
+    #[arg(
+        long,
+        value_enum,
+        env = "SUBRAUMCTL_GRAPH_LAYOUT",
+        default_value = "table"
+    )]
+    pub graph_layout: GraphLayout,
+
     /// Section to open first
     #[arg(long, value_enum, default_value = "overview")]
     pub view: TuiView,
@@ -698,6 +711,14 @@ pub struct TuiArgs {
     /// Alert LED color
     #[arg(long, value_name = "COLOR")]
     pub alert_color: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum GraphLayout {
+    #[default]
+    Table,
+    Overlay,
+    Separate,
 }
 
 #[derive(Args, Debug)]

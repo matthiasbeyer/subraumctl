@@ -30,6 +30,8 @@ fn app() -> (
                 smoothie_url: String::new(),
                 pizzamat: crate::pizzamat::Options::default(),
                 influx: crate::influx::Options::default(),
+                graph_minutes: 60,
+                graph_layout: crate::cli::GraphLayout::Table,
                 heizung: Options {
                     amqp_url: "invalid://PRIVATE".into(),
                     timeout: Duration::from_secs(1),

@@ -107,6 +107,18 @@ const SIDEBAR: &[KeyBinding] = &[
 
 const CONTENT_CLIMATE: &[KeyBinding] = &[
     KeyBinding {
+        keys: "g",
+        action: "table/overlay/separate graphs",
+    },
+    KeyBinding {
+        keys: "+ -",
+        action: "longer/shorter graph window",
+    },
+    KeyBinding {
+        keys: "t",
+        action: "graph temperature/humidity",
+    },
+    KeyBinding {
         keys: "← → / m",
         action: "sampling mode",
     },
@@ -116,11 +128,23 @@ const CONTENT_CLIMATE: &[KeyBinding] = &[
     },
     KeyBinding {
         keys: "↑ ↓",
-        action: "scroll rooms",
+        action: "scroll rooms/charts",
     },
 ];
 
 const CONTENT_POWER: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "g",
+        action: "table/overlay/separate graphs",
+    },
+    KeyBinding {
+        keys: "+ -",
+        action: "longer/shorter graph window",
+    },
+    KeyBinding {
+        keys: "↑ ↓",
+        action: "scroll charts",
+    },
     KeyBinding {
         keys: "← → / m",
         action: "sampling mode",

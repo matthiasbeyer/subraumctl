@@ -3,6 +3,7 @@
 mod app;
 mod climate;
 mod events;
+mod graphs;
 mod heizung;
 mod keymap;
 mod pizzamat;
@@ -44,6 +45,8 @@ pub struct TuiOptions {
     pub pizzamat: crate::pizzamat::Options,
     pub heizung: crate::heizung::Options,
     pub influx: crate::influx::Options,
+    pub graph_minutes: u64,
+    pub graph_layout: crate::cli::GraphLayout,
     pub verbose: u8,
     pub dry_run: bool,
 }
@@ -96,9 +99,20 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         power_rx,
         power_event_tx,
     );
+    let (graph_tx, graph_rx) = mpsc::unbounded_channel();
+    let (graph_event_tx, mut graph_event_rx) = mpsc::unbounded_channel();
+    graphs::spawn_worker(
+        options.influx.clone(),
+        options.dry_run,
+        graph_rx,
+        graph_event_tx,
+    );
     let mut app = app::App::new(
         options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
     );
+    app.graphs.tx = Some(graph_tx);
+    app.maybe_refresh_climate();
+    app.maybe_refresh_power();
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -114,6 +128,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = heizung_event_rx.recv() => app.handle_heizung_event(event),
             Some(event) = climate_event_rx.recv() => app.handle_climate_event(event),
             Some(event) = power_event_rx.recv() => app.handle_power_event(event),
+            Some(event) = graph_event_rx.recv() => app.handle_graph_event(event),
             _ = ticker.tick() => app.on_tick(),
         }
 

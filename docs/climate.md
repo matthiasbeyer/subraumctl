@@ -27,6 +27,36 @@ The table always labels the mode of the displayed snapshot, even while a mode
 change is loading or has failed. Missing values show `?`; no series produces an
 empty-data message. Snapshot refresh age is distinct from sensor sample age.
 
+### History graphs (TUI only)
+
+```sh
+subraumctl tui --view climate --graph-layout overlay --graph-minutes 360
+subraumctl tui --view climate --graph-layout separate --graph-minutes 1440
+```
+
+- **g** cycles table → colored overlay → separate charts per room → table.
+- **t** switches graphs between temperature (°C) and humidity (%), each with its
+  own scale. Room colors and legend names are shared between layouts/metrics.
+- **+ / -** lengthens/shortens the window using presets from 1 minute to 30 days.
+- **↑/↓** scrolls separate charts when they do not all fit; **Enter** refreshes.
+
+`--graph-minutes` accepts any whole number from 1 to 43200 (default: 60).
+`--graph-layout` accepts `table` (default), `overlay`, or `separate`. Set defaults
+with `SUBRAUMCTL_GRAPH_MINUTES` and `SUBRAUMCTL_GRAPH_LAYOUT`. Each section keeps
+its own window and layout during the session.
+
+Graphs query existing InfluxDB history immediately; there is no collection/warm-up
+period. Queries use roughly 600 equal time buckets per series, plotting the mean
+in each bucket. Missing buckets remain gaps. Graphs use bucket means independently
+of the table's average/latest mode. The x-axis is minutes relative to the displayed
+query's end, whose age is shown; y-axes auto-scale. Only the active graph view polls
+(every 30 seconds). `--no-connect` disables automatic polling; graph selection,
+range changes, and Enter still request data. `--dry-run` skips HTTP entirely.
+
+Failed reads keep the previous graph labeled **STALE**, retaining its actual range.
+While a changed window loads, the requested window and displayed range are labeled
+separately. Old-window responses are discarded before loading the new window.
+
 ## Sampling modes
 
 - **`average`** (default): mean over the last 15 minutes, matching the original

@@ -10,6 +10,10 @@ use super::{focused_border, panel, selection_style};
 use crate::influx::{Mode, WINDOW_MS};
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+    if app.graphs.climate.layout != crate::cli::GraphLayout::Table {
+        super::super::graphs::draw(frame, area, app, super::super::graphs::Domain::Climate);
+        return;
+    }
     let state = &app.climate;
     let areas = Layout::vertical([Constraint::Length(4), Constraint::Min(3)]).split(area);
     let age = state.updated.map_or_else(
@@ -23,7 +27,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     } else if app.options.dry_run {
         "Dry-run: no HTTP requests".into()
     } else {
-        "←/→ or m: mode   Enter: refresh   ↑/↓: scroll".into()
+        "m: mode   Enter: refresh   ↑/↓: scroll   g: graphs".into()
     };
     frame.render_widget(
         Paragraph::new(format!("Mode: {} | {age}\n{status}", state.mode.label()))

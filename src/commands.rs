@@ -1115,6 +1115,8 @@ async fn run_tui(global: GlobalArgs, args: TuiArgs) -> Result<()> {
         pizzamat: crate::pizzamat::Options::from_global(&global),
         heizung: crate::heizung::Options::from_global(&global),
         influx: crate::influx::Options::from_global(&global),
+        graph_minutes: args.graph_minutes,
+        graph_layout: args.graph_layout,
         verbose: global.verbose,
         dry_run: global.dry_run,
     };

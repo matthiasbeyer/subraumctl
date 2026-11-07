@@ -24,6 +24,8 @@ fn app() -> (App, UnboundedReceiver<Request>) {
                 theme_preset: ThemePreset::Dark,
                 smoothie_url: String::new(),
                 influx: crate::influx::Options::default(),
+                graph_minutes: 60,
+                graph_layout: crate::cli::GraphLayout::Table,
                 pizzamat: Options {
                     user: "alice".into(),
                     ..Options::default()
