@@ -188,6 +188,7 @@ mod tests {
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
             tx,
+            mpsc::unbounded_channel().0,
         );
         (app, rx)
     }

@@ -23,6 +23,7 @@ pub mod mcp;
 pub mod mqtt;
 pub mod output;
 pub mod pizzamat;
+pub mod power;
 pub mod smoothiesaur;
 pub mod tui;
 pub mod white_light;

@@ -7,6 +7,7 @@ mod heizung;
 mod lighting;
 mod opt_in;
 mod pizzamat;
+mod power;
 mod reads;
 
 use std::future::Future;
@@ -102,6 +103,7 @@ pub(super) fn register<B: super::backend::Backend>(
     opt_in::register(server, backend.clone())?;
     heizung::register(server, backend.clone())?;
     climate::register(server, backend.clone())?;
+    power::register(server, backend.clone())?;
     pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(

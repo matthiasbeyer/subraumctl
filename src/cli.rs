@@ -21,7 +21,7 @@ use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
     about = "Control the subraum over MQTT and EDI AMQP",
     long_about = "subraumctl controls the subraum lights, outlets, alerts, animation knobs and \
 smoothiesaur over MQTT (TCP) and HTTP, heating and Pizzamat food orders over EDI AMQP, \
-and room climate readings over InfluxDB HTTP. \
+and room climate and power readings over InfluxDB HTTP. \
 It also provides a keyboard-driven ratatui TUI \
 with safe mode, automatic reconnects, a live traffic pane and an application log pane.",
     after_help = "Broker: normal MQTT over TCP (tcp:// or ssl://), no WebSockets.\n\
@@ -220,6 +220,12 @@ pub enum CliCommand {
         after_help = "Examples:\n  subraumctl climate status\n  subraumctl --json climate status --mode latest\n  subraumctl climate status --watch --interval 30"
     )]
     Climate(ClimateArgs),
+
+    /// Read meter power for L1, L2, L3 and total in watts from InfluxDB
+    #[command(
+        after_help = "Examples:\n  subraumctl power status\n  subraumctl --json power status --mode latest\n  subraumctl power status --watch --interval 30"
+    )]
+    Power(PowerArgs),
 
     /// Connect, print broker information and the alert condition
     Status,
@@ -464,6 +470,27 @@ pub struct ClimateArgs {
     pub command: ClimateCommand,
 }
 
+#[derive(Args, Debug)]
+pub struct PowerArgs {
+    #[command(subcommand)]
+    pub command: PowerCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PowerCommand {
+    /// Read phase and total power (15-minute averages by default)
+    #[command(alias = "get")]
+    Status {
+        #[arg(long, value_enum, default_value_t = crate::influx::Mode::Average)]
+        mode: crate::influx::Mode,
+        #[arg(long)]
+        watch: bool,
+        /// Seconds between completed reads
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        interval: u64,
+    },
+}
+
 #[derive(Subcommand, Debug)]
 pub enum ClimateCommand {
     /// Read all reported locations (15-minute averages by default)
@@ -606,6 +633,8 @@ pub enum TuiView {
     Heizung,
     /// Measured room temperature and humidity
     Climate,
+    /// Meter power consumption by phase and total
+    Power,
 }
 
 #[derive(Args, Debug)]

@@ -82,18 +82,13 @@ bound. HTTP errors, malformed JSON, query errors and malformed/partial data
 fail the read rather than inventing zero values. An absent series or null
 measurement is valid missing data.
 
-## Reuse for the later power branch
+## Shared sensor infrastructure
 
 `src/influx.rs` owns endpoint/timeout configuration, sampling mode, clock, HTTP
 transport and common InfluxDB error handling. `src/climate.rs` owns climate
-queries, parsing and typed snapshots. A future `power` domain can reuse the
-transport and sampling modes with its own query/decoder and CLI/TUI/MCP wiring.
-
-The supplied power reference uses database `subraum-stromzähler`, measurement
-`modbus`, tag `name='stromzähler'`, and fields `P1`, `P2`, `P3`, `P∑`. Its `/1000`
-conversion to watts belongs in that power decoder; verify the stored units
-when adding it. Unicode database/query parameters are handled by the shared
-URL encoder. No power-specific query or presentation is needed in climate.
+queries, parsing and typed snapshots. The [power integration](power.md) reuses
+the transport and sampling modes with its own query, decoder and CLI/TUI/MCP
+presentation. Power's conversion to watts belongs in `src/power.rs`.
 
 ## Verification
 

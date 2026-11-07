@@ -107,6 +107,7 @@ fn real_stdio_keeps_startup_warnings_off_the_protocol_stream() {
             "pizzamat_set_default",
             "pizzamat_start",
             "pizzamat_unlock",
+            "power_status",
             "smoothiesaur_status",
             "status",
             "system_telinit",

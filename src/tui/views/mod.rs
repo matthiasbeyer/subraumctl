@@ -16,6 +16,7 @@ pub mod lighting;
 pub mod outlets;
 pub mod overview;
 pub mod pizzamat;
+pub mod power;
 pub mod smoothie;
 pub mod system;
 pub mod theme;
@@ -35,6 +36,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         Section::Pizzamat => pizzamat::draw(frame, area, app),
         Section::Heizung => heizung::draw(frame, area, app),
         Section::Climate => climate::draw(frame, area, app),
+        Section::Power => power::draw(frame, area, app),
     }
 }
 

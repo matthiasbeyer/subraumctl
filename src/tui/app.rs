@@ -41,10 +41,11 @@ pub enum Section {
     Pizzamat,
     Heizung,
     Climate,
+    Power,
 }
 
 impl Section {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -57,6 +58,7 @@ impl Section {
         Self::Pizzamat,
         Self::Heizung,
         Self::Climate,
+        Self::Power,
     ];
 
     pub fn index(self) -> usize {
@@ -73,6 +75,7 @@ impl Section {
             Self::Pizzamat => 9,
             Self::Heizung => 10,
             Self::Climate => 11,
+            Self::Power => 12,
         }
     }
 
@@ -94,6 +97,7 @@ impl Section {
             Self::Pizzamat => "Pizzamat",
             Self::Heizung => "Heizung",
             Self::Climate => "Climate",
+            Self::Power => "Power",
         }
     }
 
@@ -119,6 +123,7 @@ impl Section {
             TuiView::Pizzamat => Self::Pizzamat,
             TuiView::Heizung => Self::Heizung,
             TuiView::Climate => Self::Climate,
+            TuiView::Power => Self::Power,
         }
     }
 }
@@ -304,6 +309,8 @@ pub struct App {
     pub heizung: super::heizung::State,
     pub climate_tx: UnboundedSender<crate::influx::Mode>,
     pub climate: super::climate::State,
+    pub power_tx: UnboundedSender<crate::influx::Mode>,
+    pub power: super::power::State,
     pub should_quit: bool,
     pub section: Section,
     pub zone: FocusZone,
@@ -341,6 +348,7 @@ impl App {
         pizza_tx: UnboundedSender<crate::pizzamat::Request>,
         heizung_tx: UnboundedSender<crate::heizung::Request>,
         climate_tx: UnboundedSender<crate::influx::Mode>,
+        power_tx: UnboundedSender<crate::influx::Mode>,
     ) -> Self {
         let section = Section::from_tui_view(options.view);
         let connect = options.connect;
@@ -358,6 +366,8 @@ impl App {
             heizung: super::heizung::State::default(),
             climate_tx,
             climate: super::climate::State::default(),
+            power_tx,
+            power: super::power::State::default(),
             should_quit: false,
             section,
             zone: FocusZone::Content,
@@ -438,6 +448,7 @@ impl App {
 
         app.maybe_refresh_heizung();
         app.maybe_refresh_climate();
+        app.maybe_refresh_power();
         app
     }
 
@@ -1004,6 +1015,7 @@ impl App {
             Section::Pizzamat => self.handle_pizzamat_key(key),
             Section::Heizung => self.handle_heizung_key(key),
             Section::Climate => self.handle_climate_key(key),
+            Section::Power => self.handle_power_key(key),
         }
     }
 
@@ -1646,6 +1658,7 @@ impl App {
         }
         self.maybe_refresh_heizung();
         self.maybe_refresh_climate();
+        self.maybe_refresh_power();
     }
 
     fn go_back(&mut self) {
@@ -1973,6 +1986,7 @@ impl App {
 
     pub fn on_tick(&mut self) {
         self.maybe_refresh_climate();
+        self.maybe_refresh_power();
         self.throbber.calc_next();
         let clear_status = self
             .status

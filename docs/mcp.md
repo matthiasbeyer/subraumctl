@@ -9,7 +9,7 @@ are available, and config permissions restrict both discovery and execution.
 
 There is no arbitrary subscription, watch/monitor, file-reading, shell, or generic
 CLI tool. Device reads use fixed status topics, the bounded heating EDI API or
-fixed climate queries. They return selected decoded fields, including climate
+fixed climate/power queries. They return selected decoded fields, including climate
 location tags, rather than raw payloads. Broker addresses,
 credentials, HTTP response bodies, and raw backend errors are not tool results.
 Allowed status fields still describe the space; set their groups to `x` if that
@@ -84,6 +84,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `knob` | `knob_list`, `knob_get` | `knob_set` | `w` |
 | `heizung` | `heizung_rooms`, `heizung_get`, `heizung_status` | `heizung_set` | `w` |
 | `climate` | `climate_status` | — | `r` |
+| `power` | `power_status` | — | `r` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `status` | `status` | — | `r` |
@@ -107,6 +108,11 @@ or `latest` (includes per-metric sample timestamps). It returns measured room
 temperature and humidity by location. It uses the startup-configured
 `--influx-url` and `--influx-timeout`, independently of MQTT and heating.
 See [climate readings and protocol](climate.md).
+
+`power_status` accepts the same optional `mode` and reports `l1_watts`,
+`l2_watts`, `l3_watts` and `total_watts`. Latest reads return one meter record
+with `sample_time_ms`; averages cover the last 15 minutes. It shares the InfluxDB
+startup options. See [power readings and protocol](power.md).
 
 Live MQTT device reads are one-shot snapshots, using retained messages where available.
 `--wait` bounds collection (default 3 seconds, clamped to 1–30 in MCP); missing

@@ -143,5 +143,6 @@ fn description(section: Section) -> &'static str {
         Section::Pizzamat => "shared food orders and delivery services",
         Section::Heizung => "per-room heating targets and timers",
         Section::Climate => "measured room temperature and humidity",
+        Section::Power => "meter power by phase and total",
     }
 }

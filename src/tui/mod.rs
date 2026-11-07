@@ -6,6 +6,7 @@ mod events;
 mod heizung;
 mod keymap;
 mod pizzamat;
+mod power;
 mod safe_mode;
 mod theme;
 mod traffic;
@@ -87,7 +88,17 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         climate_rx,
         climate_event_tx,
     );
-    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx);
+    let (power_tx, power_rx) = mpsc::unbounded_channel();
+    let (power_event_tx, mut power_event_rx) = mpsc::unbounded_channel();
+    power::spawn_worker(
+        options.influx.clone(),
+        options.dry_run,
+        power_rx,
+        power_event_tx,
+    );
+    let mut app = app::App::new(
+        options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
+    );
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -102,6 +113,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
             Some(event) = heizung_event_rx.recv() => app.handle_heizung_event(event),
             Some(event) = climate_event_rx.recv() => app.handle_climate_event(event),
+            Some(event) = power_event_rx.recv() => app.handle_power_event(event),
             _ = ticker.tick() => app.on_tick(),
         }
 

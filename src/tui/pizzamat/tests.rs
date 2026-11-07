@@ -40,6 +40,7 @@ fn app() -> (App, UnboundedReceiver<Request>) {
             pizza,
             heizung,
             mpsc::unbounded_channel().0,
+            mpsc::unbounded_channel().0,
         ),
         rx,
     )

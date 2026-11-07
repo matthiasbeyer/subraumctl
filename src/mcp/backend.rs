@@ -15,6 +15,11 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    fn power(
+        &self,
+        mode: crate::influx::Mode,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn climate(
         &self,
         mode: crate::influx::Mode,
@@ -84,6 +89,25 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    async fn power(
+        &self,
+        mode: crate::influx::Mode,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        if self.dry_run {
+            return Ok(crate::power::preview(mode, crate::influx::now_ms()?));
+        }
+        tokio::select! {
+            result = crate::power::read(&self.influx, mode) => result.map(|snapshot| snapshot.json()),
+            _ = context.ct.cancelled() => Err(eyre!("request cancelled")),
+        }
+    }
+
     async fn climate(
         &self,
         mode: crate::influx::Mode,

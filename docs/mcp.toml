@@ -9,6 +9,7 @@ system = "w" # Set to x to prohibit room-system on/off commands.
 knob = "w"
 heizung = "w"
 climate = "r" # Measured room temperature/humidity; x disables climate reads.
+power = "r" # Meter power by phase and total; x disables power reads.
 smoothiesaur = "x"
 pizzamat = "w" # r exposes orders/services only; x disables Pizzamat.
 status = "r"

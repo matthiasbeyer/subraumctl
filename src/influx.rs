@@ -1,5 +1,5 @@
 //! Shared InfluxDB v1 read transport and sampling modes.
-//! Database names, queries and decoding belong to each domain (climate, etc.).
+//! Database names, queries and decoding belong to each domain (climate, power).
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -39,7 +39,7 @@ pub enum Mode {
     /// Mean over the last 15 minutes.
     #[default]
     Average,
-    /// Most recent sample per metric and location, including older samples.
+    /// Most recent sample (domain-specific), including older samples.
     Latest,
 }
 

@@ -37,11 +37,12 @@ pub enum Group {
     Publish,
     Heizung,
     Climate,
+    Power,
     Pizzamat,
 }
 
 impl Group {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Dmx,
         Self::WhiteLight,
         Self::Outlet,
@@ -53,6 +54,7 @@ impl Group {
         Self::Publish,
         Self::Heizung,
         Self::Climate,
+        Self::Power,
         Self::Pizzamat,
     ];
 
@@ -69,6 +71,7 @@ impl Group {
             Self::Publish => "publish",
             Self::Heizung => "heizung",
             Self::Climate => "climate",
+            Self::Power => "power",
             Self::Pizzamat => "pizzamat",
         }
     }
@@ -84,16 +87,17 @@ impl Group {
                     | Self::Status
                     | Self::Heizung
                     | Self::Climate
+                    | Self::Power
                     | Self::Pizzamat
             ),
-            Access::Write => !matches!(self, Self::Status | Self::Climate),
+            Access::Write => !matches!(self, Self::Status | Self::Climate | Self::Power),
         }
     }
 
     fn default_permission(self) -> Permission {
         match self {
             Self::Outlet | Self::Smoothiesaur | Self::Publish => Permission::Disabled,
-            Self::Status | Self::Climate => Permission::Read,
+            Self::Status | Self::Climate | Self::Power => Permission::Read,
             _ => Permission::Write,
         }
     }

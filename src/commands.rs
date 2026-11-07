@@ -113,6 +113,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         CliCommand::Status => status(&global),
         CliCommand::Heizung(args) => heizung(&global, args.command).await,
         CliCommand::Climate(args) => climate(&global, args.command).await,
+        CliCommand::Power(args) => power(&global, args.command).await,
         CliCommand::Publish(args) => publish(&global, args).await,
         CliCommand::Subscribe(args) => subscribe_command(&global, args).await,
         CliCommand::Monitor(args) => monitor(&global, args).await,
@@ -174,6 +175,61 @@ async fn climate(global: &GlobalArgs, command: crate::cli::ClimateCommand) -> Re
                     age(room.humidity_time_ms)
                 );
             }
+        }
+        if !watch {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
+            result = &mut shutdown => { result?; return Ok(()); }
+        }
+    }
+}
+
+async fn power(global: &GlobalArgs, command: crate::cli::PowerCommand) -> Result<()> {
+    let crate::cli::PowerCommand::Status {
+        mode,
+        watch,
+        interval,
+    } = command;
+    if global.dry_run {
+        let preview = crate::power::preview(mode, crate::influx::now_ms()?);
+        if global.json {
+            println!("{preview}");
+        } else if !global.quiet {
+            println!(
+                "dry-run: InfluxDB power {}",
+                preview["query"].as_str().unwrap()
+            );
+        }
+        return Ok(());
+    }
+    let options = crate::influx::Options::from_global(global);
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
+    loop {
+        let snapshot = tokio::select! {
+            result = crate::power::read(&options, mode) => result?,
+            result = &mut shutdown => { result?; return Ok(()); }
+        };
+        if global.json {
+            println!("{}", snapshot.json());
+        } else if !global.quiet {
+            use crate::power::format_watts;
+            let age = snapshot.sample_time_ms.map_or(String::new(), |t| {
+                format!(
+                    " ({}s old)",
+                    snapshot.queried_at_ms.saturating_sub(t) / 1000
+                )
+            });
+            println!("Power — {}{age}", mode.label());
+            println!(
+                "L1: {}, L2: {}, L3: {}, Total: {}",
+                format_watts(snapshot.l1_watts),
+                format_watts(snapshot.l2_watts),
+                format_watts(snapshot.l3_watts),
+                format_watts(snapshot.total_watts)
+            );
         }
         if !watch {
             return Ok(());

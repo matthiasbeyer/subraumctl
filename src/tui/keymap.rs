@@ -120,6 +120,17 @@ const CONTENT_CLIMATE: &[KeyBinding] = &[
     },
 ];
 
+const CONTENT_POWER: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "← → / m",
+        action: "sampling mode",
+    },
+    KeyBinding {
+        keys: "Enter",
+        action: "refresh",
+    },
+];
+
 const CONTENT_OVERVIEW: &[KeyBinding] = &[
     KeyBinding {
         keys: "↑ ↓",
@@ -382,6 +393,7 @@ pub fn section_bindings(section: Section) -> &'static [KeyBinding] {
         Section::Theme => CONTENT_THEME,
         Section::Heizung => CONTENT_HEIZUNG,
         Section::Climate => CONTENT_CLIMATE,
+        Section::Power => CONTENT_POWER,
         Section::Pizzamat => &[
             KeyBinding {
                 keys: "↑ ↓",
