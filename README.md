@@ -8,6 +8,8 @@ Rust CLI and keyboard-driven TUI for the subraum MQTT control system.
 > better.
 > I spend about $1 USD on it with deepseek.
 
+[MCP server usage and permissions](docs/mcp.md)
+
 # Issues
 
 Issues are disabled. If you find an issue, send patches.

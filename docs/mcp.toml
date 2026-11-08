@@ -1,0 +1,12 @@
+# MCP defaults. Permissions apply only to the MCP server.
+# r = read only; w = read and write; x = disabled.
+[tools]
+dmx = "w"
+white_light = "w"
+outlet = "x"
+alert = "w"
+system = "w" # Set to x to prohibit room-system on/off commands.
+knob = "w"
+smoothiesaur = "x"
+status = "r"
+publish = "x" # w allows ANY MQTT topic/payload, bypassing other groups.

@@ -15,6 +15,8 @@ pub mod commands;
 pub mod decode;
 pub mod knob;
 pub mod logging;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod mqtt;
 pub mod output;
 pub mod smoothiesaur;

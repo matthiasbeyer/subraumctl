@@ -1231,15 +1231,11 @@ impl App {
                 7 => self.smoothie.laser = self.smoothie.laser.saturating_add(1),
                 _ => {}
             },
-            KeyCode::Home => {
-                if self.smoothie.focus == 7 {
-                    self.smoothie.laser = 0;
-                }
+            KeyCode::Home if self.smoothie.focus == 7 => {
+                self.smoothie.laser = 0;
             }
-            KeyCode::End => {
-                if self.smoothie.focus == 7 {
-                    self.smoothie.laser = 255;
-                }
+            KeyCode::End if self.smoothie.focus == 7 => {
+                self.smoothie.laser = 255;
             }
             KeyCode::Enter => self.send_smoothie(),
             KeyCode::Char('z') => self.request_command(ControlCommand::SmoothieLaserZero),

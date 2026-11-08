@@ -5,6 +5,10 @@ edition = "2021"
 description = "MQTT CLI and TUI for the subraum"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = []
+mcp = ["dep:rmcp", "dep:serde", "dep:toml"]
+
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
@@ -16,10 +20,13 @@ eyre = "0.6"
 paho-mqtt = { version = "0.14", features = ["bundled", "ssl"] }
 ratatui = "0.30"
 reqwest = "0.13"
+rmcp = { version = "3.9", optional = true, default-features = false, features = ["server", "transport-io"] }
+serde = { version = "1", optional = true, features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 throbber-widgets-tui = "0.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+toml = { version = "1", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "tracing-log"] }
 tui-input = "0.15"

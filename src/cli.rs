@@ -109,6 +109,10 @@ pub struct GlobalArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
+    /// Start the MCP server on stdio (only explicitly registered tools are exposed)
+    #[cfg(feature = "mcp")]
+    Mcp(McpArgs),
+
     /// Send a DMX animation command to edi/cmd/dmx
     ///
     /// Payload: {"args":"<group> <animation>"}
@@ -204,6 +208,14 @@ pub enum CliCommand {
         after_help = "Examples:\n  subraumctl completions bash\n  subraumctl completions zsh"
     )]
     Completions(CompletionsArgs),
+}
+
+#[cfg(feature = "mcp")]
+#[derive(Args, Debug)]
+pub struct McpArgs {
+    /// TOML tool permissions file (omitting this uses built-in defaults)
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -596,6 +608,22 @@ mod tests {
     #[test]
     fn command_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn mcp_requires_the_build_feature_and_explicit_subcommand() {
+        let result = Cli::try_parse_from(["subraumctl", "mcp", "--config", "permissions.toml"]);
+        #[cfg(feature = "mcp")]
+        assert!(matches!(result.unwrap().command, CliCommand::Mcp(_)));
+        #[cfg(not(feature = "mcp"))]
+        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["subraumctl"]).is_err());
+        assert!(matches!(
+            Cli::try_parse_from(["subraumctl", "status"])
+                .unwrap()
+                .command,
+            CliCommand::Status
+        ));
     }
 
     #[test]

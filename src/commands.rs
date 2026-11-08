@@ -36,6 +36,8 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     let global = cli.global.clone();
     match cli.command {
+        #[cfg(feature = "mcp")]
+        CliCommand::Mcp(args) => crate::mcp::run(args, &global).await,
         CliCommand::Dmx(args) => {
             let command = ControlCommand::Dmx {
                 group: args.group,
