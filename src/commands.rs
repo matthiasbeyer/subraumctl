@@ -906,6 +906,7 @@ async fn run_tui(global: GlobalArgs, args: TuiArgs) -> Result<()> {
         theme,
         theme_preset: args.theme,
         smoothie_url: global.smoothiesaur_url.clone(),
+        pizzamat: crate::pizzamat::Options::from_global(&global),
         verbose: global.verbose,
         dry_run: global.dry_run,
     };

@@ -4,6 +4,7 @@ mod choice;
 mod controls;
 mod lighting;
 mod opt_in;
+mod pizzamat;
 mod reads;
 
 use std::future::Future;
@@ -97,6 +98,7 @@ pub(super) fn register<B: super::backend::Backend>(
     lighting::register(server, backend.clone())?;
     controls::register(server, backend.clone())?;
     opt_in::register(server, backend.clone())?;
+    pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(
         server,

@@ -3,6 +3,7 @@
 mod app;
 mod events;
 mod keymap;
+mod pizzamat;
 mod safe_mode;
 mod theme;
 mod traffic;
@@ -37,6 +38,7 @@ pub struct TuiOptions {
     pub theme: Theme,
     pub theme_preset: ThemePreset,
     pub smoothie_url: String,
+    pub pizzamat: crate::pizzamat::Options,
     pub verbose: u8,
     pub dry_run: bool,
 }
@@ -57,7 +59,15 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     let (http_event_tx, mut http_event_rx) = mpsc::unbounded_channel::<HttpEvent>();
     smoothiesaur::spawn_http_worker(http_rx, http_event_tx, Duration::from_secs(5));
 
-    let mut app = app::App::new(options, mqtt_tx, http_tx);
+    let (pizza_tx, pizza_rx) = mpsc::unbounded_channel();
+    let (pizza_event_tx, mut pizza_event_rx) = mpsc::unbounded_channel();
+    pizzamat::spawn_worker(
+        options.pizzamat.clone(),
+        options.dry_run,
+        pizza_rx,
+        pizza_event_tx,
+    );
+    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx);
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -69,6 +79,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(key) = ui_rx.recv() => app.handle_key(key),
             Some(event) = mqtt_event_rx.recv() => app.handle_mqtt_event(event),
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
+            Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
             _ = ticker.tick() => app.on_tick(),
         }
 

@@ -19,6 +19,7 @@ pub mod logging;
 pub mod mcp;
 pub mod mqtt;
 pub mod output;
+pub mod pizzamat;
 pub mod smoothiesaur;
 pub mod tui;
 pub mod white_light;

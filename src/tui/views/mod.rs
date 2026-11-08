@@ -13,12 +13,13 @@ pub mod animation;
 pub mod lighting;
 pub mod outlets;
 pub mod overview;
+pub mod pizzamat;
 pub mod smoothie;
 pub mod system;
 pub mod theme;
 pub mod white_light;
 
-pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     match app.section {
         Section::Overview => overview::draw(frame, area, app),
         Section::Lighting => lighting::draw(frame, area, app),
@@ -29,6 +30,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         Section::Animation => animation::draw(frame, area, app),
         Section::Smoothie => smoothie::draw(frame, area, app),
         Section::Theme => theme::draw(frame, area, app),
+        Section::Pizzamat => pizzamat::draw(frame, area, app),
     }
 }
 

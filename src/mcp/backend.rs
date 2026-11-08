@@ -15,6 +15,12 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    fn pizzamat_user(&self) -> &str;
+    fn pizzamat(
+        &self,
+        request: crate::pizzamat::Request,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn send(
         &self,
         command: ControlCommand,
@@ -30,6 +36,7 @@ pub(super) trait Backend: Send + Sync + 'static {
 pub(super) struct DeviceBackend {
     mqtt: MqttOptions,
     smoothie_url: String,
+    pizzamat: crate::pizzamat::Options,
     http: reqwest::Client,
     dry_run: bool,
     wait: Duration,
@@ -51,6 +58,7 @@ impl DeviceBackend {
         Ok(Self {
             mqtt,
             smoothie_url: global.smoothiesaur_url.clone(),
+            pizzamat: crate::pizzamat::Options::from_global(global),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()?,
@@ -62,6 +70,25 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    fn pizzamat_user(&self) -> &str {
+        &self.pizzamat.user
+    }
+
+    async fn pizzamat(
+        &self,
+        request: crate::pizzamat::Request,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        // Finish the bounded exchange and close its private reply queue even if
+        // the caller cancels after submission. Never replay order mutations.
+        crate::pizzamat::transport::execute(&self.pizzamat, &request, self.dry_run).await
+    }
+
     async fn snapshot(
         &self,
         snapshot: Snapshot,

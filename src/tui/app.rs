@@ -38,10 +38,11 @@ pub enum Section {
     Animation,
     Smoothie,
     Theme,
+    Pizzamat,
 }
 
 impl Section {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -51,6 +52,7 @@ impl Section {
         Self::Animation,
         Self::Smoothie,
         Self::Theme,
+        Self::Pizzamat,
     ];
 
     pub fn index(self) -> usize {
@@ -64,6 +66,7 @@ impl Section {
             Self::Animation => 6,
             Self::Smoothie => 7,
             Self::Theme => 8,
+            Self::Pizzamat => 9,
         }
     }
 
@@ -82,6 +85,7 @@ impl Section {
             Self::Animation => "Animation",
             Self::Smoothie => "Smoothiesaur",
             Self::Theme => "Theme",
+            Self::Pizzamat => "Pizzamat",
         }
     }
 
@@ -104,6 +108,7 @@ impl Section {
             TuiView::Animation => Self::Animation,
             TuiView::Smoothie => Self::Smoothie,
             TuiView::Theme => Self::Theme,
+            TuiView::Pizzamat => Self::Pizzamat,
         }
     }
 }
@@ -247,11 +252,28 @@ pub struct ThemeViewState {
 }
 
 pub enum TextInputMode {
-    Search { section: Section, input: Input },
-    ExactKnob { knob: Knob, input: Input },
-    ExactWarm { input: Input },
-    ExactCold { input: Input },
-    ExactLaser { input: Input },
+    Pizza {
+        operation: Option<crate::pizzamat::Operation>,
+        fields: Vec<String>,
+        input: Input,
+    },
+    Search {
+        section: Section,
+        input: Input,
+    },
+    ExactKnob {
+        knob: Knob,
+        input: Input,
+    },
+    ExactWarm {
+        input: Input,
+    },
+    ExactCold {
+        input: Input,
+    },
+    ExactLaser {
+        input: Input,
+    },
 }
 
 pub struct TextInputState {
@@ -262,6 +284,8 @@ pub struct App {
     pub options: TuiOptions,
     pub mqtt_tx: UnboundedSender<MqttCommand>,
     pub http_tx: UnboundedSender<HttpCommand>,
+    pub pizza_tx: UnboundedSender<crate::pizzamat::Request>,
+    pub pizzamat: super::pizzamat::State,
     pub should_quit: bool,
     pub section: Section,
     pub zone: FocusZone,
@@ -296,6 +320,7 @@ impl App {
         options: TuiOptions,
         mqtt_tx: UnboundedSender<MqttCommand>,
         http_tx: UnboundedSender<HttpCommand>,
+        pizza_tx: UnboundedSender<crate::pizzamat::Request>,
     ) -> Self {
         let section = Section::from_tui_view(options.view);
         let connect = options.connect;
@@ -307,6 +332,8 @@ impl App {
             options,
             mqtt_tx,
             http_tx,
+            pizza_tx,
+            pizzamat: super::pizzamat::State::default(),
             should_quit: false,
             section,
             zone: FocusZone::Content,
@@ -402,6 +429,17 @@ impl App {
         }
 
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        // Free-form food and names must accept q/Q and all global shortcuts.
+        // Ctrl+C still exits; Escape cancels the current form.
+        if !ctrl
+            && matches!(
+                self.text_input.as_ref().map(|state| &state.mode),
+                Some(TextInputMode::Pizza { .. })
+            )
+        {
+            self.handle_text_input_key(key);
+            return;
+        }
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         let upper_q = matches!(key.code, KeyCode::Char('Q'))
             || (matches!(key.code, KeyCode::Char('q')) && shift);
@@ -694,9 +732,11 @@ impl App {
             return;
         };
 
-        // q closes the current input, matching the global "q closes the
-        // current view" rule. Uppercase Q already quits before this point.
-        if matches!(key.code, KeyCode::Char('q')) {
+        // Pizzamat accepts free-form names and food, including q/Q.
+        // Other inputs follow the global "q closes the current view" rule.
+        if matches!(key.code, KeyCode::Char('q'))
+            && !matches!(state.mode, TextInputMode::Pizza { .. })
+        {
             if let TextInputMode::Search { section, .. } = &state.mode {
                 self.clear_filter(*section);
             }
@@ -704,6 +744,61 @@ impl App {
         }
 
         match &mut state.mode {
+            TextInputMode::Pizza {
+                operation,
+                fields,
+                input,
+            } => match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Enter => {
+                    let value = input.value().trim().to_string();
+                    if value.is_empty() || value.chars().any(char::is_control) || value.len() > 4096
+                    {
+                        self.set_status(
+                            "Enter a nonempty value (maximum 4096 bytes, no control characters)",
+                            StatusKind::Error,
+                        );
+                        self.text_input = Some(state);
+                    } else if let Some(operation) = *operation {
+                        if operation == crate::pizzamat::Operation::SetDefault
+                            && fields.is_empty()
+                            && value.contains(char::is_whitespace)
+                        {
+                            self.set_status(
+                                "Default-order service must be a single word",
+                                StatusKind::Error,
+                            );
+                            self.text_input = Some(state);
+                            return;
+                        }
+                        fields.push(value);
+                        if fields.len() < operation.fields().len() {
+                            *input = Input::default();
+                            self.text_input = Some(state);
+                        } else {
+                            match crate::pizzamat::Request::new(
+                                operation,
+                                &self.options.pizzamat.user,
+                                fields,
+                            ) {
+                                Ok(request) => self.send_pizzamat(request),
+                                Err(error) => {
+                                    self.set_status(error.to_string(), StatusKind::Error);
+                                    fields.pop();
+                                    self.text_input = Some(state);
+                                }
+                            }
+                        }
+                    } else {
+                        self.options.pizzamat.user = value;
+                        self.set_status("Pizzamat identity updated", StatusKind::Info);
+                    }
+                }
+                _ => {
+                    input.handle_event(&Event::Key(key));
+                    self.text_input = Some(state);
+                }
+            },
             TextInputMode::Search { section, input } => match key.code {
                 KeyCode::Esc => {
                     self.clear_filter(*section);
@@ -864,6 +959,7 @@ impl App {
             Section::Animation => self.handle_animation_key(key),
             Section::Smoothie => self.handle_smoothie_key(key),
             Section::Theme => self.handle_theme_key(key),
+            Section::Pizzamat => self.handle_pizzamat_key(key),
         }
     }
 

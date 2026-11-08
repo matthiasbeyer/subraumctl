@@ -35,10 +35,11 @@ pub enum Group {
     Smoothiesaur,
     Status,
     Publish,
+    Pizzamat,
 }
 
 impl Group {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Dmx,
         Self::WhiteLight,
         Self::Outlet,
@@ -48,6 +49,7 @@ impl Group {
         Self::Smoothiesaur,
         Self::Status,
         Self::Publish,
+        Self::Pizzamat,
     ];
 
     pub fn name(self) -> &'static str {
@@ -61,6 +63,7 @@ impl Group {
             Self::Smoothiesaur => "smoothiesaur",
             Self::Status => "status",
             Self::Publish => "publish",
+            Self::Pizzamat => "pizzamat",
         }
     }
 
@@ -68,7 +71,12 @@ impl Group {
         match access {
             Access::Read => matches!(
                 self,
-                Self::WhiteLight | Self::Alert | Self::Knob | Self::Smoothiesaur | Self::Status
+                Self::WhiteLight
+                    | Self::Alert
+                    | Self::Knob
+                    | Self::Smoothiesaur
+                    | Self::Status
+                    | Self::Pizzamat
             ),
             Access::Write => self != Self::Status,
         }

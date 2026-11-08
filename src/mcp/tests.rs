@@ -11,9 +11,24 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHal
 use super::*;
 
 #[derive(Default)]
-struct RecordingBackend(std::sync::Mutex<Vec<crate::action::ControlCommand>>);
+pub(super) struct RecordingBackend(std::sync::Mutex<Vec<crate::action::ControlCommand>>);
 
 impl backend::Backend for RecordingBackend {
+    fn pizzamat_user(&self) -> &str {
+        "test-user"
+    }
+
+    async fn pizzamat(
+        &self,
+        request: crate::pizzamat::Request,
+        _: RequestContext<RoleServer>,
+    ) -> eyre::Result<Value> {
+        Ok(
+            json!({"command": request.operation.command(), "user": request.user, "args": request.args,
+            "message": "Pizzamat reply"}),
+        )
+    }
+
     async fn snapshot(
         &self,
         snapshot: snapshot::Snapshot,
@@ -31,7 +46,7 @@ impl backend::Backend for RecordingBackend {
     }
 }
 
-struct Client {
+pub(super) struct Client {
     reader: BufReader<ReadHalf<DuplexStream>>,
     writer: WriteHalf<DuplexStream>,
 }
@@ -44,7 +59,7 @@ impl Client {
             .unwrap();
     }
 
-    async fn request(&mut self, method: &str, params: Value) -> Value {
+    pub(super) async fn request(&mut self, method: &str, params: Value) -> Value {
         self.send(json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
             .await;
         let mut line = String::new();
@@ -54,7 +69,7 @@ impl Client {
         response
     }
 
-    async fn initialize(&mut self) {
+    pub(super) async fn initialize(&mut self) {
         let response = self
             .request(
                 "initialize",
@@ -74,7 +89,7 @@ impl Client {
     }
 }
 
-fn start(server: McpServer) -> (Client, tokio::task::JoinHandle<()>) {
+pub(super) fn start(server: McpServer) -> (Client, tokio::task::JoinHandle<()>) {
     let (client, transport) = tokio::io::duplex(8192);
     let task = tokio::spawn(async move {
         server
@@ -324,7 +339,7 @@ async fn opt_ins_are_disabled_by_default_and_publish_is_unfiltered_when_enabled(
 #[tokio::test]
 async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments() {
     tokio::time::timeout(Duration::from_secs(5), async {
-        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'").unwrap();
+        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'\npizzamat = 'x'").unwrap();
         let mut server = McpServer::new(config);
         tools::register(&mut server, Arc::new(RecordingBackend::default())).unwrap();
         let (mut client, task) = start(server);

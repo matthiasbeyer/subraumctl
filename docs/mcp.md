@@ -8,11 +8,15 @@ equipment through unrestricted CLI/MQTT access. Only explicitly registered tools
 are available, and config permissions restrict both discovery and execution.
 
 There is no arbitrary subscription, watch/monitor, file-reading, shell, or generic
-CLI tool. Reads subscribe only to fixed, known status topics and return selected
+CLI tool. Device reads subscribe only to fixed, known status topics and return selected
 decoded fields, never raw payloads or unknown device IDs. Broker addresses,
 credentials, HTTP response bodies, and raw backend errors are not tool results.
 Allowed status fields still describe the space; set their groups to `x` if that
 information should not be shared.
+
+Pizzamat reads return the ordering service's text replies, including participant
+names and food choices. It uses a separate AMQP endpoint and Pizzamat order identity;
+see [Pizzamat setup and tools](pizzamat.md). `pizzamat = "x"` disables this group.
 
 Outlet control, Smoothiesaur, and raw publishing are disabled by default.
 **`publish = "w"` explicitly bypasses the command restrictions:** any MQTT topic
@@ -78,6 +82,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `system` | — | `system_telinit` | `w` |
 | `knob` | `knob_list`, `knob_get` | `knob_set` | `w` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
+| `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `status` | `status` | — | `r` |
 | `publish` | — | `publish` | `x` |
 
@@ -87,7 +92,7 @@ Examples of tool arguments: `dmx` accepts
 `knob_get` accepts `{"knob":"cx"}`; `knob_set` additionally takes `"value":42`.
 Switches use `"state":"on"`/`"off"`. The advertised schemas list enum choices.
 
-Live reads are one-shot snapshots, using retained messages where available.
+Live device reads are one-shot snapshots, using retained messages where available.
 `--wait` bounds collection (default 3 seconds, clamped to 1–30 in MCP); missing
 values are `null`, malformed numeric/boolean readings are `null`, and unknown
 alert conditions become `unknown`. MQTT sessions are always clean; MCP rejects

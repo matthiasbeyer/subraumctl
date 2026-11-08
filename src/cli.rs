@@ -20,7 +20,8 @@ use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
     version,
     about = "Control the subraum over MQTT",
     long_about = "subraumctl controls the subraum lights, outlets, alerts, animation knobs and \
-smoothiesaur over normal MQTT (TCP). It also provides a keyboard-driven ratatui TUI \
+smoothiesaur over MQTT (TCP) and HTTP, and Pizzamat food orders over EDI AMQP. \
+It also provides a keyboard-driven ratatui TUI \
 with safe mode, automatic reconnects, a live traffic pane and an application log pane.",
     after_help = "Broker: normal MQTT over TCP (tcp:// or ssl://), no WebSockets.\n\
 Default: tcp://mqtt.subraum.c3pb.de:1883 (override with --broker or SUBRAUMCTL_BROKER).\n\
@@ -89,6 +90,27 @@ pub struct GlobalArgs {
         default_value = DEFAULT_SMOOTHIE_URL
     )]
     pub smoothiesaur_url: String,
+
+    /// Pizzamat EDI AMQP endpoint
+    #[arg(long, global = true, env = "SUBRAUMCTL_PIZZAMAT_AMQP_URL", default_value = crate::pizzamat::DEFAULT_AMQP_URL)]
+    pub pizzamat_amqp_url: String,
+
+    /// Pizzamat order identity; use the same identity as your existing bot orders
+    #[arg(long, global = true, env = "SUBRAUMCTL_PIZZAMAT_USER")]
+    pub pizzamat_user: Option<String>,
+
+    /// Use puzza-* commands for a debug-build Pizzamat server
+    #[arg(long, global = true)]
+    pub pizzamat_debug: bool,
+
+    /// Pizzamat request timeout in seconds (includes order-start announcements)
+    #[arg(
+        long,
+        global = true,
+        default_value_t = 15,
+        value_parser = clap::value_parser!(u64).range(1..=120)
+    )]
+    pub pizzamat_timeout: u64,
 
     /// Preview wire actions without publishing or sending them
     #[arg(long, global = true)]
@@ -477,6 +499,8 @@ pub enum TuiView {
     Smoothie,
     #[value(name = "theme")]
     Theme,
+    #[value(name = "pizzamat", alias = "pizza")]
+    Pizzamat,
 }
 
 #[derive(Args, Debug)]

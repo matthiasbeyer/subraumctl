@@ -159,7 +159,7 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-fn draw_content(frame: &mut Frame, area: Rect, app: &App) {
+fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut content_area = area;
     if let Some(TextInputState {
         mode: TextInputMode::Search { section, input },
@@ -417,7 +417,59 @@ fn draw_text_input(frame: &mut Frame, area: Rect, app: &App) {
     let Some(TextInputState { mode }) = &app.text_input else {
         return;
     };
+    if let TextInputMode::Pizza {
+        operation,
+        fields,
+        input,
+    } = mode
+    {
+        let popup_area = centered_rect(85, 35, area);
+        frame.render_widget(Clear, popup_area);
+        let title = operation.map_or("Pizzamat identity", |operation| operation.label());
+        let block = views::panel(title)
+            .border_style(Style::default().fg(app.theme.accent))
+            .style(
+                Style::default()
+                    .bg(app.theme.background)
+                    .fg(app.theme.foreground),
+            );
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+        let rows = Layout::vertical([
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        let label = operation.map_or_else(
+            || "User identity".to_string(),
+            |operation| {
+                format!(
+                    "{}/{}: {}",
+                    fields.len() + 1,
+                    operation.fields().len(),
+                    operation.fields()[fields.len()]
+                )
+            },
+        );
+        frame.render_widget(Paragraph::new(label).wrap(Wrap { trim: false }), rows[0]);
+        let scroll = input.visual_scroll(rows[1].width.saturating_sub(1) as usize);
+        frame.render_widget(
+            Paragraph::new(input.value()).scroll((0, scroll as u16)),
+            rows[1],
+        );
+        frame.render_widget(
+            Paragraph::new("Enter next/save   Esc cancel   Ctrl+C quit"),
+            rows[2],
+        );
+        frame.set_cursor_position((
+            rows[1].x + input.visual_cursor().saturating_sub(scroll) as u16,
+            rows[1].y,
+        ));
+        return;
+    }
     let (title, input) = match mode {
+        TextInputMode::Pizza { .. } => return,
         TextInputMode::Search { .. } => return,
         TextInputMode::ExactKnob { knob, input } => {
             (format!("Set knob {} value", knob.name()), input)

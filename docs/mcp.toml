@@ -8,5 +8,6 @@ alert = "w"
 system = "w" # Set to x to prohibit room-system on/off commands.
 knob = "w"
 smoothiesaur = "x"
+pizzamat = "w" # r exposes orders/services only; x disables Pizzamat.
 status = "r"
 publish = "x" # w allows ANY MQTT topic/payload, bypassing other groups.

@@ -6,6 +6,10 @@
 /user.js
 /version.json
 
+# Pizzamat source is a local protocol reference only.
+/pizzamat/
+/edi-rust/
+
 # Build output
 /target/
 /result

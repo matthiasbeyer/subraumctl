@@ -145,4 +145,6 @@ pub async fn run(args: McpArgs, global: &GlobalArgs) -> Result<()> {
 }
 
 #[cfg(test)]
+mod pizzamat_tests;
+#[cfg(test)]
 mod tests;

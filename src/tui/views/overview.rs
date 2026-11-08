@@ -77,7 +77,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         )]),
         Line::from("S toggles safe mode"),
         Line::from(if app.safe_mode {
-            "MQTT and HTTP commands are confirmed"
+            "Device MQTT and HTTP commands confirmed"
         } else {
             "commands are sent immediately"
         }),
@@ -140,5 +140,6 @@ fn description(section: Section) -> &'static str {
         Section::Animation => "animation knobs",
         Section::Smoothie => "relays, laser and coolant status",
         Section::Theme => "TUI colors and palette",
+        Section::Pizzamat => "shared food orders and delivery services",
     }
 }
