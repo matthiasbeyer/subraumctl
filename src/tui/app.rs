@@ -599,7 +599,10 @@ impl App {
             }
             Popup::ConfirmCommand { pending, .. } => {
                 if choice.is_confirm() {
-                    self.send_actions(pending.actions);
+                    match pending {
+                        PendingCommand::Device { actions, .. } => self.send_actions(actions),
+                        PendingCommand::Heizung(request) => self.send_heizung(request),
+                    }
                 } else {
                     self.set_status("command cancelled", StatusKind::Info);
                 }
@@ -966,6 +969,8 @@ impl App {
                     });
                 }
             }
+            // Mouse interaction is not implemented for these sections yet.
+            Section::Pizzamat | Section::Heizung | Section::Climate | Section::Power => {}
         }
     }
 
@@ -2738,10 +2743,24 @@ mod tests {
             theme: Theme::preset(ThemePreset::Dark),
             theme_preset: ThemePreset::Dark,
             smoothie_url: String::new(),
+            pizzamat: crate::pizzamat::Options::default(),
+            heizung: crate::heizung::Options {
+                amqp_url: "invalid://PRIVATE".to_string(),
+                timeout: std::time::Duration::from_secs(1),
+            },
+            influx: crate::influx::Options::default(),
+            graph_minutes: 60,
+            graph_layout: crate::cli::GraphLayout::Table,
             verbose: 0,
             dry_run: true,
         };
-        App::new(options, mqtt_tx, http_tx)
+        let (pizza_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (heizung_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (climate_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (power_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        App::new(
+            options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
+        )
     }
 
     #[cfg(feature = "tui-mouse")]
