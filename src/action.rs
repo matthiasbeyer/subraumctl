@@ -23,6 +23,11 @@ pub const TOPIC_KNOB_GET_PREFIX: &str = "knob/get/";
 pub const TOPIC_KNOB_SET_PREFIX: &str = "knob/set/";
 pub const TOPIC_WHITE_LIGHT_REQUEST_PREFIX: &str = "light/esp/request/";
 pub const TOPIC_WHITE_LIGHT_STATUS_PREFIX: &str = "light/esp/status/";
+pub const TOPIC_AUDIO_MUTE: &str = "edi/cmd/mute";
+pub const TOPIC_AUDIO_UNMUTE: &str = "edi/cmd/unmute";
+pub const TOPIC_AUDIO_DETACH: &str = "edi/cmd/amd";
+pub const TOPIC_AUDIO_ATTACH: &str = "edi/cmd/ama";
+pub const TOPIC_AUDIO_VOLUME: &str = "edi/cmd/volume";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum DmxGroup {
@@ -341,6 +346,40 @@ impl SmoothieRelay {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum AudioRoom {
+    #[value(name = "hack")]
+    Hack,
+    #[value(name = "make")]
+    Make,
+    #[value(name = "cook")]
+    Cook,
+    #[value(name = "elab")]
+    Elab,
+}
+
+impl AudioRoom {
+    pub const ALL: [Self; 4] = [Self::Hack, Self::Make, Self::Cook, Self::Elab];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Hack => "hack",
+            Self::Make => "make",
+            Self::Cook => "cook",
+            Self::Elab => "elab",
+        }
+    }
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Hack => 0,
+            Self::Make => 1,
+            Self::Cook => 2,
+            Self::Elab => 3,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Transport {
     Mqtt,
@@ -454,6 +493,18 @@ pub enum ControlCommand {
         power: u8,
     },
     SmoothieLaserZero,
+    AudioMute {
+        room: AudioRoom,
+        muted: bool,
+    },
+    AudioDetach {
+        room: AudioRoom,
+        detached: bool,
+    },
+    AudioVolume {
+        room: AudioRoom,
+        percent: u8,
+    },
     RawPublish {
         topic: String,
         payload: String,
@@ -568,6 +619,43 @@ impl ControlCommand {
                 url: smoothie_url.to_string(),
                 body: "M771I19P0000\n".to_string(),
             }]),
+            Self::AudioMute { room, muted } => Ok(vec![Action::Publish {
+                topic: if *muted {
+                    TOPIC_AUDIO_MUTE
+                } else {
+                    TOPIC_AUDIO_UNMUTE
+                }
+                .to_string(),
+                payload: json!({
+                    "args": room.as_str(),
+                    "user": "subraumctl"
+                })
+                .to_string(),
+                retain: false,
+            }]),
+            Self::AudioDetach { room, detached } => Ok(vec![Action::Publish {
+                topic: if *detached {
+                    TOPIC_AUDIO_DETACH
+                } else {
+                    TOPIC_AUDIO_ATTACH
+                }
+                .to_string(),
+                payload: json!({
+                    "args": room.as_str(),
+                    "user": "subraumctl"
+                })
+                .to_string(),
+                retain: false,
+            }]),
+            Self::AudioVolume { room, percent } => Ok(vec![Action::Publish {
+                topic: TOPIC_AUDIO_VOLUME.to_string(),
+                payload: json!({
+                    "args": format!("{} {}%", room.as_str(), percent),
+                    "user": "subraumctl"
+                })
+                .to_string(),
+                retain: false,
+            }]),
             Self::RawPublish {
                 topic,
                 payload,
@@ -613,6 +701,21 @@ impl ControlCommand {
             ),
             Self::SmoothieLaser { power } => format!("smoothiesaur laser {power}"),
             Self::SmoothieLaserZero => "smoothiesaur laser zero".to_string(),
+            Self::AudioMute { room, muted } => {
+                format!(
+                    "audio {} {}",
+                    if *muted { "mute" } else { "unmute" },
+                    room.as_str()
+                )
+            }
+            Self::AudioDetach { room, detached } => format!(
+                "audio {} {}",
+                if *detached { "detach" } else { "attach" },
+                room.as_str()
+            ),
+            Self::AudioVolume { room, percent } => {
+                format!("audio volume {} {percent}%", room.as_str())
+            }
             Self::RawPublish { topic, .. } => format!("publish {topic}"),
         }
     }
@@ -810,5 +913,64 @@ mod tests {
             assert!(relay.on_command().starts_with("M771I15P"));
             assert!(relay.off_command().starts_with("M771I15P"));
         }
+    }
+
+    #[test]
+    fn audio_commands_use_expected_topics_and_payloads() {
+        let mute = ControlCommand::AudioMute {
+            room: AudioRoom::Hack,
+            muted: true,
+        }
+        .expand("")
+        .unwrap();
+        assert_eq!(mute[0].target(), TOPIC_AUDIO_MUTE);
+        assert_eq!(mute[0].payload(), r#"{"args":"hack","user":"subraumctl"}"#);
+
+        let unmute = ControlCommand::AudioMute {
+            room: AudioRoom::Make,
+            muted: false,
+        }
+        .expand("")
+        .unwrap();
+        assert_eq!(unmute[0].target(), TOPIC_AUDIO_UNMUTE);
+        assert_eq!(
+            unmute[0].payload(),
+            r#"{"args":"make","user":"subraumctl"}"#
+        );
+
+        let detach = ControlCommand::AudioDetach {
+            room: AudioRoom::Cook,
+            detached: true,
+        }
+        .expand("")
+        .unwrap();
+        assert_eq!(detach[0].target(), TOPIC_AUDIO_DETACH);
+        assert_eq!(
+            detach[0].payload(),
+            r#"{"args":"cook","user":"subraumctl"}"#
+        );
+        let attach = ControlCommand::AudioDetach {
+            room: AudioRoom::Elab,
+            detached: false,
+        }
+        .expand("")
+        .unwrap();
+        assert_eq!(attach[0].target(), TOPIC_AUDIO_ATTACH);
+        assert_eq!(
+            attach[0].payload(),
+            r#"{"args":"elab","user":"subraumctl"}"#
+        );
+
+        let volume = ControlCommand::AudioVolume {
+            room: AudioRoom::Cook,
+            percent: 65,
+        }
+        .expand("")
+        .unwrap();
+        assert_eq!(volume[0].target(), TOPIC_AUDIO_VOLUME);
+        assert_eq!(
+            volume[0].payload(),
+            r#"{"args":"cook 65%","user":"subraumctl"}"#
+        );
     }
 }

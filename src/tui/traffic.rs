@@ -9,9 +9,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ratatui::style::Color;
 
 use crate::action::{
-    Action, TOPIC_ALERT_CONDITION, TOPIC_DMX, TOPIC_KNOB_GET_PREFIX, TOPIC_KNOB_SET_PREFIX,
-    TOPIC_OUTLET, TOPIC_RADIATION_HACK, TOPIC_RADIATION_MAKE, TOPIC_SMOOTHIE_PREFIX, TOPIC_SOB,
-    TOPIC_TELINIT, TOPIC_WHITE_LIGHT_REQUEST_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX,
+    Action, TOPIC_ALERT_CONDITION, TOPIC_AUDIO_ATTACH, TOPIC_AUDIO_DETACH, TOPIC_AUDIO_MUTE,
+    TOPIC_AUDIO_UNMUTE, TOPIC_AUDIO_VOLUME, TOPIC_DMX, TOPIC_KNOB_GET_PREFIX,
+    TOPIC_KNOB_SET_PREFIX, TOPIC_OUTLET, TOPIC_RADIATION_HACK, TOPIC_RADIATION_MAKE,
+    TOPIC_SMOOTHIE_PREFIX, TOPIC_SOB, TOPIC_TELINIT, TOPIC_WHITE_LIGHT_REQUEST_PREFIX,
+    TOPIC_WHITE_LIGHT_STATUS_PREFIX,
 };
 use crate::color::Theme;
 use crate::tui::app::Section;
@@ -217,6 +219,13 @@ pub fn sections_for_topic(topic: &str) -> u16 {
         mask |= Section::Alerts.bit();
     } else if topic == TOPIC_TELINIT {
         mask |= Section::System.bit();
+    } else if topic == TOPIC_AUDIO_MUTE
+        || topic == TOPIC_AUDIO_UNMUTE
+        || topic == TOPIC_AUDIO_DETACH
+        || topic == TOPIC_AUDIO_ATTACH
+        || topic == TOPIC_AUDIO_VOLUME
+    {
+        mask |= Section::Audio.bit();
     } else if topic.starts_with(TOPIC_KNOB_GET_PREFIX) || topic.starts_with(TOPIC_KNOB_SET_PREFIX) {
         mask |= Section::Animation.bit();
     } else if topic.starts_with(TOPIC_SMOOTHIE_PREFIX) {

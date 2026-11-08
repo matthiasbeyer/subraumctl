@@ -317,6 +317,37 @@ const CONTENT_SMOOTHIE: &[KeyBinding] = &[
     },
 ];
 
+const CONTENT_AUDIO: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "↑ ↓",
+        action: "select room control",
+    },
+    KeyBinding {
+        keys: "← → +/-",
+        action: "adjust focused volume",
+    },
+    KeyBinding {
+        keys: "Enter/Space",
+        action: "activate focused control / toggle max",
+    },
+    KeyBinding {
+        keys: "Home End",
+        action: "volume min/max",
+    },
+    KeyBinding {
+        keys: "↑ ↓ Enter",
+        action: "navigate/toggle max volume",
+    },
+    KeyBinding {
+        keys: "digits",
+        action: "set exact volume %",
+    },
+    KeyBinding {
+        keys: "A D",
+        action: "attach/detach focused room",
+    },
+];
+
 const CONTENT_THEME: &[KeyBinding] = &[
     KeyBinding {
         keys: "↑ ↓",
@@ -447,6 +478,7 @@ pub fn section_bindings(section: Section) -> &'static [KeyBinding] {
         Section::System => CONTENT_SYSTEM,
         Section::Animation => CONTENT_ANIMATION,
         Section::Smoothie => CONTENT_SMOOTHIE,
+        Section::Audio => CONTENT_AUDIO,
         Section::Theme => CONTENT_THEME,
         Section::Heizung => CONTENT_HEIZUNG,
         Section::Climate => CONTENT_CLIMATE,
