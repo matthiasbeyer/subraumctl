@@ -26,6 +26,7 @@ use crate::decode::{AlertCondition, AlertState, parse_alert, parse_bool};
 use crate::knob::{KNOB_SPECS, Knob, format_value};
 use crate::mqtt::{MqttCommand, MqttEvent};
 use crate::smoothiesaur::{HttpCommand, HttpEvent, SmoothieStatus};
+use crate::tui::TuiOptions;
 use crate::tui::safe_mode::{ConfirmChoice, PendingCommand};
 use crate::tui::theme::{ColorPicker, PickerOutcome};
 use crate::tui::traffic::{TrafficDirection, TrafficEntry, TrafficLog, sections_for_action};
