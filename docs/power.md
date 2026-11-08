@@ -93,6 +93,12 @@ defaults to `r`; `x` hides/disables the tool. `w` also permits reads, but there
 are no power write operations. The endpoint, query, database and timeout are
 configured at server startup, not through tool arguments.
 
+`power_history` accepts `{}` (last 60 minutes) or `{"minutes":360}`. Windows
+range from 1 minute to 30 days. It returns named L1/L2/L3/Total series in watts,
+with exact bucket-start timestamps and nulls for missing values, using the same
+bucket means as the TUI graphs. It shares the `power` permission group and
+startup endpoint/timeout. See the [MCP history result format](mcp.md#climate-and-power-history).
+
 ## InfluxDB protocol
 
 Uses the same `--influx-url` / `SUBRAUMCTL_INFLUX_URL` and `--influx-timeout` /

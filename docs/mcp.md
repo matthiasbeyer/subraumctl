@@ -83,8 +83,8 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `system` | — | `system_telinit` | `w` |
 | `knob` | `knob_list`, `knob_get` | `knob_set` | `w` |
 | `heizung` | `heizung_rooms`, `heizung_get`, `heizung_status` | `heizung_set` | `w` |
-| `climate` | `climate_status` | — | `r` |
-| `power` | `power_status` | — | `r` |
+| `climate` | `climate_status`, `climate_history` | — | `r` |
+| `power` | `power_status`, `power_history` | — | `r` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `status` | `status` | — | `r` |
@@ -113,6 +113,35 @@ See [climate readings and protocol](climate.md).
 `l2_watts`, `l3_watts` and `total_watts`. Latest reads return one meter record
 with `sample_time_ms`; averages cover the last 15 minutes. It shares the InfluxDB
 startup options. See [power readings and protocol](power.md).
+
+### Climate and power history
+
+`climate_history` and `power_history` expose the same bucketed history as the TUI
+graphs. Call with `{}` for the last hour or `{"minutes":360}` for six hours.
+`minutes` must be a whole number from 1 to 43200 (30 days). Climate means the
+existing room temperature/humidity sensors, not outdoor weather or forecasts.
+
+Each tool performs a one-shot read using the startup InfluxDB endpoint and timeout.
+The existing `climate` / `power` permissions apply: `r` or `w` enables status and
+history; `x` hides both and rejects direct calls. No `mode`, watch, endpoint, or
+arbitrary query arguments are accepted. `--dry-run` returns the database, domain,
+window and generated query without HTTP requests.
+
+Results contain `domain`, `window_minutes`, `start_ms`, `end_ms`, `bucket_ms`,
+`aggregation: "mean"`, and a `series` array. Each series has:
+
+- `name`: room location, or `L1`, `L2`, `L3`, `Total`.
+- `metric`: `temperature`, `humidity`, or `power`.
+- `unit`: `°C`, `%`, or `W`.
+- `samples`: objects with `time_ms` (Unix milliseconds, bucket start) and `value`
+  (number or null). Missing values stay null; absent series are omitted.
+
+Queries use approximately 600 equal buckets per series (at most 601 including
+the final partial bucket). Bucket timestamps are not individual sensor sample
+times. Values are bucket means regardless of the status tool's sampling mode.
+Power is in watts, with negative values preserved and Total read from `P∑`;
+these values are not energy totals in kWh. Failed/partial responses return an
+error rather than invented readings. Request cancellation stops history reads.
 
 Live MQTT device reads are one-shot snapshots, using retained messages where available.
 `--wait` bounds collection (default 3 seconds, clamped to 1–30 in MCP); missing

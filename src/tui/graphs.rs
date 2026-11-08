@@ -13,23 +13,11 @@ use super::{
     app::{App, Section},
     traffic::{TrafficDirection, TrafficEntry, now_hms},
 };
+pub use crate::history::Domain;
 use crate::{cli::GraphLayout, influx::Options};
 use history::History;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Domain {
-    Climate,
-    Power,
-}
-
 impl Domain {
-    fn database(self) -> &'static str {
-        match self {
-            Self::Climate => crate::climate::DATABASE,
-            Self::Power => crate::power::DATABASE,
-        }
-    }
-
     fn section(self) -> Section {
         match self {
             Self::Climate => Section::Climate,

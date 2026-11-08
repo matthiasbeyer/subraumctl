@@ -97,6 +97,12 @@ permission group defaults to `r`; `x` hides/disables the tool. `w` also permits
 the read, but the group has no write operations. Endpoint, database, query and
 timeout cannot be supplied by tool callers.
 
+`climate_history` accepts `{}` (last 60 minutes) or `{"minutes":360}`. Windows
+range from 1 minute to 30 days. It returns temperature and humidity series per
+location, with explicit units, timestamped bucket means and null missing values,
+using the same data as the TUI graphs. It shares the `climate` permission group
+and startup endpoint/timeout. See the [MCP history result format](mcp.md#climate-and-power-history).
+
 ## Connection and protocol
 
 | Option | Environment | Default |
@@ -118,7 +124,10 @@ measurement is valid missing data.
 transport and common InfluxDB error handling. `src/climate.rs` owns climate
 queries, parsing and typed snapshots. The [power integration](power.md) reuses
 the transport and sampling modes with its own query, decoder and CLI/TUI/MCP
-presentation. Power's conversion to watts belongs in `src/power.rs`.
+presentation. `src/history.rs` owns shared bucketed climate/power history queries,
+validation, exact timestamps, units and JSON output. `src/tui/graphs/history.rs`
+converts these samples to chart coordinates and preserves gaps. Power values are
+converted to watts in the snapshot and history decoders.
 
 ## Verification
 

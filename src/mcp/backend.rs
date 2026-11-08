@@ -15,6 +15,12 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    fn history(
+        &self,
+        domain: crate::history::Domain,
+        minutes: u64,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn power(
         &self,
         mode: crate::influx::Mode,
@@ -89,6 +95,27 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    async fn history(
+        &self,
+        domain: crate::history::Domain,
+        minutes: u64,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        crate::history::validate_minutes(minutes)?;
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        if self.dry_run {
+            return crate::history::preview(domain, minutes, crate::influx::now_ms()?);
+        }
+        tokio::select! {
+            result = crate::history::read(&self.influx, domain, minutes) => result.map(|history| history.json()),
+            _ = context.ct.cancelled() => Err(eyre!("request cancelled")),
+        }
+    }
+
     async fn power(
         &self,
         mode: crate::influx::Mode,

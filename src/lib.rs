@@ -15,6 +15,7 @@ pub mod color;
 pub mod commands;
 pub mod decode;
 pub mod heizung;
+pub mod history;
 pub mod influx;
 pub mod knob;
 pub mod logging;

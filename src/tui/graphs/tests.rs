@@ -99,7 +99,7 @@ fn history_rejects_partial_malformed_and_unbounded_data() {
 
 #[test]
 fn queries_bound_history_and_align_buckets_to_window_start() {
-    let query = history::query(Domain::Climate, 1, 1_000_051);
+    let query = history::query(Domain::Climate, 1, 1_000_051).unwrap();
     assert!(query.contains("time >= 940051ms AND time <= 1000051ms"));
     assert_eq!(
         query
@@ -107,7 +107,7 @@ fn queries_bound_history_and_align_buckets_to_window_start() {
             .count(),
         2
     );
-    let query = history::query(Domain::Power, 43200, 4_000_000_000);
+    let query = history::query(Domain::Power, 43200, 4_000_000_000).unwrap();
     assert!(query.contains("GROUP BY time(4320000ms,"));
     assert!(query.contains("mean(\"P∑\") AS \"total\""));
     assert!(query.contains("\"name\" = 'stromzähler'"));
