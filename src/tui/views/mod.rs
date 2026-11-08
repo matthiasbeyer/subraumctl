@@ -10,6 +10,7 @@ use crate::color::Theme;
 
 pub mod alerts;
 pub mod animation;
+pub mod heizung;
 pub mod lighting;
 pub mod outlets;
 pub mod overview;
@@ -31,6 +32,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         Section::Smoothie => smoothie::draw(frame, area, app),
         Section::Theme => theme::draw(frame, area, app),
         Section::Pizzamat => pizzamat::draw(frame, area, app),
+        Section::Heizung => heizung::draw(frame, area, app),
     }
 }
 

@@ -111,12 +111,98 @@ pub async fn run(cli: Cli) -> Result<()> {
             SmoothieCommand::Status { watch } => smoothie_status(&global, watch).await,
         },
         CliCommand::Status => status(&global),
+        CliCommand::Heizung(args) => heizung(&global, args.command).await,
         CliCommand::Publish(args) => publish(&global, args).await,
         CliCommand::Subscribe(args) => subscribe_command(&global, args).await,
         CliCommand::Monitor(args) => monitor(&global, args).await,
         CliCommand::Tui(args) => run_tui(global.clone(), args).await,
         CliCommand::Man(args) => render_man(args),
         CliCommand::Completions(args) => render_completions(args),
+    }
+}
+
+async fn heizung(global: &GlobalArgs, command: crate::cli::HeizungCommand) -> Result<()> {
+    use crate::cli::HeizungCommand;
+    use crate::heizung::{Options, Request, Room, transport};
+
+    let (request, watch, interval) = match command {
+        HeizungCommand::Rooms => {
+            for room in Room::ALL {
+                if global.json {
+                    println!("{}", serde_json::json!({"room": room.name()}));
+                } else if !global.quiet {
+                    println!("{}", room.name());
+                }
+            }
+            return Ok(());
+        }
+        HeizungCommand::Status {
+            rooms,
+            watch,
+            interval,
+        } => (Request::get(rooms)?, watch, interval),
+        HeizungCommand::Set {
+            rooms,
+            temperature,
+            all,
+            duration,
+        } => (
+            Request::set(
+                if all { Room::ALL.to_vec() } else { rooms },
+                temperature,
+                duration,
+            )?,
+            false,
+            0,
+        ),
+    };
+    let options = Options::from_global(global);
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
+    loop {
+        let operation = transport::execute(&options, &request, global.dry_run);
+        tokio::pin!(operation);
+        let result = if watch {
+            tokio::select! {
+                result = &mut operation => result?,
+                signal = &mut shutdown => {
+                    signal?;
+                    // Finish the bounded exchange so its private queue is closed.
+                    let _ = operation.await;
+                    return Ok(());
+                }
+            }
+        } else {
+            operation.await?
+        };
+        if global.json {
+            println!("{result}");
+        } else if !global.quiet {
+            if global.dry_run {
+                println!("dry-run: AMQP cmd/heizung {}", request.args());
+            } else if result["acknowledged"] == true {
+                println!("heizung: acknowledged {}", request.args());
+            } else if let Some(rooms) = result["rooms"].as_array() {
+                for room in rooms {
+                    let seconds = room["remaining_seconds"].as_u64().unwrap_or_default();
+                    println!(
+                        "{}: target {:.1} °C, {:02}:{:02}:{:02} remaining",
+                        room["room"].as_str().unwrap_or("?"),
+                        room["target_celsius"].as_f64().unwrap_or_default(),
+                        seconds / 3600,
+                        seconds / 60 % 60,
+                        seconds % 60
+                    );
+                }
+            }
+        }
+        if !watch || global.dry_run {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
+            result = &mut shutdown => { result?; return Ok(()); }
+        }
     }
 }
 
@@ -907,6 +993,7 @@ async fn run_tui(global: GlobalArgs, args: TuiArgs) -> Result<()> {
         theme_preset: args.theme,
         smoothie_url: global.smoothiesaur_url.clone(),
         pizzamat: crate::pizzamat::Options::from_global(&global),
+        heizung: crate::heizung::Options::from_global(&global),
         verbose: global.verbose,
         dry_run: global.dry_run,
     };

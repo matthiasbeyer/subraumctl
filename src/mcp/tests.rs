@@ -11,9 +11,20 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHal
 use super::*;
 
 #[derive(Default)]
-pub(super) struct RecordingBackend(std::sync::Mutex<Vec<crate::action::ControlCommand>>);
+pub(super) struct RecordingBackend(
+    std::sync::Mutex<Vec<crate::action::ControlCommand>>,
+    std::sync::Mutex<Vec<crate::heizung::Request>>,
+);
 
 impl backend::Backend for RecordingBackend {
+    async fn heizung(
+        &self,
+        request: crate::heizung::Request,
+        _: RequestContext<RoleServer>,
+    ) -> eyre::Result<Value> {
+        self.1.lock().unwrap().push(request);
+        Ok(json!({"submitted": true}))
+    }
     fn pizzamat_user(&self) -> &str {
         "test-user"
     }
@@ -146,6 +157,165 @@ async fn catalogue_tools_return_structured_data_and_reject_extra_arguments() {
         assert_eq!(invalid["result"]["isError"], true);
         drop(client);
         task.await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn heating_validates_before_io_and_enforces_permissions() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        for permission in ["r", "w", "x"] {
+            let backend = Arc::new(RecordingBackend::default());
+            let mut server = McpServer::new(
+                toml::from_str(&format!("[tools]\nheizung = '{permission}'")).unwrap(),
+            );
+            tools::register(&mut server, backend.clone()).unwrap();
+            let (mut client, task) = start(server);
+            client.initialize().await;
+            let listed = client.request("tools/list", json!({})).await;
+            let tools = listed["result"]["tools"].as_array().unwrap();
+            for name in [
+                "heizung_get",
+                "heizung_status",
+                "heizung_rooms",
+                "heizung_set",
+            ] {
+                let enabled = if name == "heizung_set" {
+                    permission == "w"
+                } else {
+                    permission != "x"
+                };
+                let tool = tools.iter().find(|tool| tool["name"] == name);
+                assert_eq!(tool.is_some(), enabled);
+                if let Some(tool) = tool {
+                    assert_eq!(tool["annotations"]["readOnlyHint"], name != "heizung_set");
+                } else {
+                    let result = client.request("tools/call", json!({"name": name})).await;
+                    assert_eq!(result["error"]["code"], -32601);
+                }
+            }
+            if permission != "x" {
+                for name in ["heizung_get", "heizung_status"] {
+                    for args in [
+                        json!({"rooms": ["unknown"]}),
+                        json!({"rooms": ["hack", "hack"]}),
+                        json!({"watch": true}),
+                        json!({"amqp_url": "other"}),
+                    ] {
+                        let result = client
+                            .request("tools/call", json!({"name": name, "arguments": args}))
+                            .await;
+                        assert_eq!(result["result"]["isError"], true);
+                    }
+                }
+            }
+            if permission == "w" {
+                for args in [
+                    json!({"temperature": 20}),
+                    json!({"rooms": ["hack"], "temperature": 26}),
+                    json!({"rooms": ["hack"], "temperature": 21.55}),
+                    json!({"rooms": ["hack"], "temperature": 21, "duration_minutes": 35792}),
+                    json!({"rooms": ["hack"], "all": true, "temperature": 21}),
+                    json!({"rooms": ["hack"], "temperature": 21, "src": "other"}),
+                ] {
+                    let result = client
+                        .request(
+                            "tools/call",
+                            json!({"name": "heizung_set", "arguments": args}),
+                        )
+                        .await;
+                    assert_eq!(result["result"]["isError"], true, "{result}");
+                }
+            }
+            assert!(backend.1.lock().unwrap().is_empty());
+            if permission != "x" {
+                for (name, args) in [
+                    ("heizung_get", json!({"rooms": ["hack", "make"]})),
+                    ("heizung_status", json!({})),
+                ] {
+                    let result = client
+                        .request("tools/call", json!({"name": name, "arguments": args}))
+                        .await;
+                    assert_eq!(result["result"]["structuredContent"]["submitted"], true);
+                }
+                let requests = backend.1.lock().unwrap().clone();
+                assert_eq!(requests[0].args(), "get hack make");
+                assert_eq!(requests[1].args(), "get make hack cook elab shit storage");
+            }
+            if permission == "w" {
+                for args in [
+                    json!({"rooms": ["hack", "make"], "temperature": 21.5}),
+                    json!({"all": true, "temperature": 20, "duration_minutes": 0}),
+                ] {
+                    let result = client
+                        .request(
+                            "tools/call",
+                            json!({"name": "heizung_set", "arguments": args}),
+                        )
+                        .await;
+                    assert_eq!(result["result"]["structuredContent"]["submitted"], true);
+                }
+                let requests = backend.1.lock().unwrap().clone();
+                assert_eq!(requests[2].args(), "set hack make 21.5 -d 180");
+                assert_eq!(
+                    requests[3].args(),
+                    "set make hack cook elab shit storage 20.0 -d 0"
+                );
+            }
+            drop(client);
+            task.await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn heating_dry_run_and_connection_errors_hide_endpoint_credentials() {
+    use clap::Parser;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut global = crate::cli::Cli::try_parse_from([
+            "subraumctl",
+            "--heizung-amqp-url",
+            "invalid://PRIVATE_CREDENTIAL@invalid",
+            "heizung",
+            "status",
+        ])
+        .unwrap()
+        .global;
+        for dry_run in [true, false] {
+            global.dry_run = dry_run;
+            let mut server = McpServer::new(Config::default());
+            tools::register(
+                &mut server,
+                Arc::new(backend::DeviceBackend::new(&global).unwrap()),
+            )
+            .unwrap();
+            let (mut client, task) = start(server);
+            client.initialize().await;
+            for (name, args) in [
+                ("heizung_status", json!({})),
+                ("heizung_set", json!({"rooms": ["hack"], "temperature": 21})),
+            ] {
+                let result = client
+                    .request("tools/call", json!({"name": name, "arguments": args}))
+                    .await;
+                assert!(!result.to_string().contains("PRIVATE_CREDENTIAL"));
+                if dry_run {
+                    assert_eq!(result["result"]["structuredContent"]["submitted"], false);
+                    assert_eq!(result["result"]["structuredContent"]["dry_run"], true);
+                } else {
+                    assert_eq!(result["result"]["isError"], true);
+                    assert_eq!(
+                        result["result"]["content"][0]["text"],
+                        "heizung AMQP connection failed"
+                    );
+                }
+            }
+            drop(client);
+            task.await.unwrap();
+        }
     })
     .await
     .unwrap();
@@ -339,7 +509,7 @@ async fn opt_ins_are_disabled_by_default_and_publish_is_unfiltered_when_enabled(
 #[tokio::test]
 async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments() {
     tokio::time::timeout(Duration::from_secs(5), async {
-        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'\npizzamat = 'x'").unwrap();
+        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'\nheizung = 'r'\npizzamat = 'x'").unwrap();
         let mut server = McpServer::new(config);
         tools::register(&mut server, Arc::new(RecordingBackend::default())).unwrap();
         let (mut client, task) = start(server);
@@ -347,7 +517,7 @@ async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments(
         let listed = client.request("tools/list", json!({})).await;
         let names: Vec<_> = listed["result"]["tools"].as_array().unwrap().iter()
             .map(|tool| tool["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["alert_led", "knob_get", "knob_list", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
+        assert_eq!(names, ["alert_led", "heizung_get", "heizung_rooms", "heizung_status", "knob_get", "knob_list", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
         for name in names {
             let arguments = if name == "knob_get" { json!({"knob": "cx"}) } else { json!({}) };
             let result = client.request("tools/call", json!({"name": name, "arguments": arguments})).await;
@@ -355,7 +525,7 @@ async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments(
             let invalid = client.request("tools/call", json!({"name": name, "arguments": {"topic": "#", "watch": true}})).await;
             assert_eq!(invalid["result"]["isError"], true);
         }
-        for name in ["subscribe", "monitor", "knob_watch", "smoothiesaur_laser", "white_light_apply", "alert_sob", "knob_set"] {
+        for name in ["subscribe", "monitor", "knob_watch", "smoothiesaur_laser", "white_light_apply", "alert_sob", "knob_set", "heizung_set"] {
             let result = client.request("tools/call", json!({"name": name})).await;
             assert_eq!(result["error"]["code"], -32601);
         }

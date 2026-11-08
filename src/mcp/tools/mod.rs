@@ -2,6 +2,7 @@
 
 mod choice;
 mod controls;
+mod heizung;
 mod lighting;
 mod opt_in;
 mod pizzamat;
@@ -98,6 +99,7 @@ pub(super) fn register<B: super::backend::Backend>(
     lighting::register(server, backend.clone())?;
     controls::register(server, backend.clone())?;
     opt_in::register(server, backend.clone())?;
+    heizung::register(server, backend.clone())?;
     pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(

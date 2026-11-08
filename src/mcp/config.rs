@@ -35,11 +35,12 @@ pub enum Group {
     Smoothiesaur,
     Status,
     Publish,
+    Heizung,
     Pizzamat,
 }
 
 impl Group {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Dmx,
         Self::WhiteLight,
         Self::Outlet,
@@ -49,6 +50,7 @@ impl Group {
         Self::Smoothiesaur,
         Self::Status,
         Self::Publish,
+        Self::Heizung,
         Self::Pizzamat,
     ];
 
@@ -63,6 +65,7 @@ impl Group {
             Self::Smoothiesaur => "smoothiesaur",
             Self::Status => "status",
             Self::Publish => "publish",
+            Self::Heizung => "heizung",
             Self::Pizzamat => "pizzamat",
         }
     }
@@ -76,6 +79,7 @@ impl Group {
                     | Self::Knob
                     | Self::Smoothiesaur
                     | Self::Status
+                    | Self::Heizung
                     | Self::Pizzamat
             ),
             Access::Write => self != Self::Status,

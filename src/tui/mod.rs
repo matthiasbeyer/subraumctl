@@ -2,6 +2,7 @@
 
 mod app;
 mod events;
+mod heizung;
 mod keymap;
 mod pizzamat;
 mod safe_mode;
@@ -39,6 +40,7 @@ pub struct TuiOptions {
     pub theme_preset: ThemePreset,
     pub smoothie_url: String,
     pub pizzamat: crate::pizzamat::Options,
+    pub heizung: crate::heizung::Options,
     pub verbose: u8,
     pub dry_run: bool,
 }
@@ -67,7 +69,15 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         pizza_rx,
         pizza_event_tx,
     );
-    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx);
+    let (heizung_tx, heizung_rx) = mpsc::unbounded_channel();
+    let (heizung_event_tx, mut heizung_event_rx) = mpsc::unbounded_channel();
+    heizung::spawn_worker(
+        options.heizung.clone(),
+        options.dry_run,
+        heizung_rx,
+        heizung_event_tx,
+    );
+    let mut app = app::App::new(options, mqtt_tx, http_tx, pizza_tx, heizung_tx);
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -80,6 +90,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = mqtt_event_rx.recv() => app.handle_mqtt_event(event),
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
             Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
+            Some(event) = heizung_event_rx.recv() => app.handle_heizung_event(event),
             _ = ticker.tick() => app.on_tick(),
         }
 

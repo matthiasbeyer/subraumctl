@@ -7,6 +7,7 @@ outlet = "x"
 alert = "w"
 system = "w" # Set to x to prohibit room-system on/off commands.
 knob = "w"
+heizung = "w"
 smoothiesaur = "x"
 pizzamat = "w" # r exposes orders/services only; x disables Pizzamat.
 status = "r"

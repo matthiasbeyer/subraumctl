@@ -22,25 +22,38 @@ impl ConfirmChoice {
 }
 
 #[derive(Clone, Debug)]
-pub struct PendingCommand {
-    pub description: String,
-    pub actions: Vec<Action>,
-    pub destructive: bool,
+pub enum PendingCommand {
+    Device {
+        description: String,
+        actions: Vec<Action>,
+        destructive: bool,
+    },
+    Heizung(crate::heizung::Request),
 }
 
 impl PendingCommand {
     pub fn preview_lines(&self, max_actions: usize) -> Vec<String> {
-        let mut lines = vec![self.description.clone()];
-        for action in self.actions.iter().take(max_actions) {
+        let (description, actions, destructive) = match self {
+            Self::Device {
+                description,
+                actions,
+                destructive,
+            } => (description, actions, destructive),
+            Self::Heizung(request) => {
+                return vec![
+                    "Set heating targets".into(),
+                    format!("AMQP cmd/heizung {}", request.args()),
+                ];
+            }
+        };
+        let mut lines = vec![description.clone()];
+        for action in actions.iter().take(max_actions) {
             lines.push(action.describe());
         }
-        if self.actions.len() > max_actions {
-            lines.push(format!(
-                "… {} more action(s)",
-                self.actions.len() - max_actions
-            ));
+        if actions.len() > max_actions {
+            lines.push(format!("… {} more action(s)", actions.len() - max_actions));
         }
-        if self.destructive {
+        if *destructive {
             lines.push("WARNING: destructive command".to_string());
         }
         lines
@@ -59,7 +72,7 @@ mod tests {
 
     #[test]
     fn preview_lists_all_actions_and_a_destructive_warning() {
-        let pending = PendingCommand {
+        let pending = PendingCommand::Device {
             description: "test".to_string(),
             actions: vec![
                 Action::Publish {

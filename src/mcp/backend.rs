@@ -15,6 +15,11 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    fn heizung(
+        &self,
+        request: crate::heizung::Request,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn pizzamat_user(&self) -> &str;
     fn pizzamat(
         &self,
@@ -36,6 +41,7 @@ pub(super) trait Backend: Send + Sync + 'static {
 pub(super) struct DeviceBackend {
     mqtt: MqttOptions,
     smoothie_url: String,
+    heizung: crate::heizung::Options,
     pizzamat: crate::pizzamat::Options,
     http: reqwest::Client,
     dry_run: bool,
@@ -58,6 +64,7 @@ impl DeviceBackend {
         Ok(Self {
             mqtt,
             smoothie_url: global.smoothiesaur_url.clone(),
+            heizung: crate::heizung::Options::from_global(global),
             pizzamat: crate::pizzamat::Options::from_global(global),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
@@ -70,6 +77,21 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    async fn heizung(
+        &self,
+        request: crate::heizung::Request,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        // Finish the bounded exchange and close its exclusive queue even if
+        // the caller cancels after submission. Never replay a setting.
+        crate::heizung::transport::execute(&self.heizung, &request, self.dry_run).await
+    }
+
     fn pizzamat_user(&self) -> &str {
         &self.pizzamat.user
     }

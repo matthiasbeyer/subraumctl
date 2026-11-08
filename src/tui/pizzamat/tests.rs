@@ -12,6 +12,7 @@ fn app() -> (App, UnboundedReceiver<Request>) {
     let (mqtt, _) = mpsc::unbounded_channel();
     let (http, _) = mpsc::unbounded_channel();
     let (pizza, rx) = mpsc::unbounded_channel();
+    let (heizung, _) = mpsc::unbounded_channel();
     (
         App::new(
             TuiOptions {
@@ -26,12 +27,17 @@ fn app() -> (App, UnboundedReceiver<Request>) {
                     user: "alice".into(),
                     ..Options::default()
                 },
+                heizung: crate::heizung::Options {
+                    amqp_url: "invalid://unused".into(),
+                    timeout: std::time::Duration::from_secs(1),
+                },
                 verbose: 0,
                 dry_run: true,
             },
             mqtt,
             http,
             pizza,
+            heizung,
         ),
         rx,
     )

@@ -469,6 +469,7 @@ fn draw_text_input(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
     let (title, input) = match mode {
+        TextInputMode::Heizung { field, input } => (field.title().to_string(), input),
         TextInputMode::Pizza { .. } => return,
         TextInputMode::Search { .. } => return,
         TextInputMode::ExactKnob { knob, input } => {

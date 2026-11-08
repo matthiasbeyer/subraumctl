@@ -39,10 +39,11 @@ pub enum Section {
     Smoothie,
     Theme,
     Pizzamat,
+    Heizung,
 }
 
 impl Section {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -53,6 +54,7 @@ impl Section {
         Self::Smoothie,
         Self::Theme,
         Self::Pizzamat,
+        Self::Heizung,
     ];
 
     pub fn index(self) -> usize {
@@ -67,6 +69,7 @@ impl Section {
             Self::Smoothie => 7,
             Self::Theme => 8,
             Self::Pizzamat => 9,
+            Self::Heizung => 10,
         }
     }
 
@@ -86,6 +89,7 @@ impl Section {
             Self::Smoothie => "Smoothiesaur",
             Self::Theme => "Theme",
             Self::Pizzamat => "Pizzamat",
+            Self::Heizung => "Heizung",
         }
     }
 
@@ -109,6 +113,7 @@ impl Section {
             TuiView::Smoothie => Self::Smoothie,
             TuiView::Theme => Self::Theme,
             TuiView::Pizzamat => Self::Pizzamat,
+            TuiView::Heizung => Self::Heizung,
         }
     }
 }
@@ -252,6 +257,10 @@ pub struct ThemeViewState {
 }
 
 pub enum TextInputMode {
+    Heizung {
+        field: super::heizung::Field,
+        input: Input,
+    },
     Pizza {
         operation: Option<crate::pizzamat::Operation>,
         fields: Vec<String>,
@@ -286,6 +295,8 @@ pub struct App {
     pub http_tx: UnboundedSender<HttpCommand>,
     pub pizza_tx: UnboundedSender<crate::pizzamat::Request>,
     pub pizzamat: super::pizzamat::State,
+    pub heizung_tx: UnboundedSender<crate::heizung::Request>,
+    pub heizung: super::heizung::State,
     pub should_quit: bool,
     pub section: Section,
     pub zone: FocusZone,
@@ -321,6 +332,7 @@ impl App {
         mqtt_tx: UnboundedSender<MqttCommand>,
         http_tx: UnboundedSender<HttpCommand>,
         pizza_tx: UnboundedSender<crate::pizzamat::Request>,
+        heizung_tx: UnboundedSender<crate::heizung::Request>,
     ) -> Self {
         let section = Section::from_tui_view(options.view);
         let connect = options.connect;
@@ -334,6 +346,8 @@ impl App {
             http_tx,
             pizza_tx,
             pizzamat: super::pizzamat::State::default(),
+            heizung_tx,
+            heizung: super::heizung::State::default(),
             should_quit: false,
             section,
             zone: FocusZone::Content,
@@ -412,6 +426,7 @@ impl App {
             );
         }
 
+        app.maybe_refresh_heizung();
         app
     }
 
@@ -641,7 +656,10 @@ impl App {
                 } else if matches!(key.code, KeyCode::Char('y'))
                     || (matches!(key.code, KeyCode::Enter) && selected.is_confirm())
                 {
-                    self.send_actions(pending.actions);
+                    match pending {
+                        PendingCommand::Device { actions, .. } => self.send_actions(actions),
+                        PendingCommand::Heizung(request) => self.send_heizung(request),
+                    }
                 } else if matches!(key.code, KeyCode::Char('n') | KeyCode::Esc)
                     || (matches!(key.code, KeyCode::Enter) && !selected.is_confirm())
                 {
@@ -744,6 +762,19 @@ impl App {
         }
 
         match &mut state.mode {
+            TextInputMode::Heizung { field, input } => match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Enter => {
+                    if let Err(error) = self.heizung.set_field(*field, input.value()) {
+                        self.set_status(error.to_string(), StatusKind::Error);
+                        self.text_input = Some(state);
+                    }
+                }
+                _ => {
+                    input.handle_event(&Event::Key(key));
+                    self.text_input = Some(state);
+                }
+            },
             TextInputMode::Pizza {
                 operation,
                 fields,
@@ -960,6 +991,7 @@ impl App {
             Section::Smoothie => self.handle_smoothie_key(key),
             Section::Theme => self.handle_theme_key(key),
             Section::Pizzamat => self.handle_pizzamat_key(key),
+            Section::Heizung => self.handle_heizung_key(key),
         }
     }
 
@@ -1600,6 +1632,7 @@ impl App {
             Section::Animation => self.ensure_animation_focus(),
             _ => {}
         }
+        self.maybe_refresh_heizung();
     }
 
     fn go_back(&mut self) {
@@ -1694,7 +1727,7 @@ impl App {
 
         if self.safe_mode {
             self.popup = Some(Popup::ConfirmCommand {
-                pending: PendingCommand {
+                pending: PendingCommand::Device {
                     description: command.description(),
                     actions,
                     destructive: command.destructive(),

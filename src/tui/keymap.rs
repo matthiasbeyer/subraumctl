@@ -276,6 +276,33 @@ const CONTENT_THEME: &[KeyBinding] = &[
     },
 ];
 
+const CONTENT_HEIZUNG: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "↑ ↓",
+        action: "item",
+    },
+    KeyBinding {
+        keys: "← →",
+        action: "adjust",
+    },
+    KeyBinding {
+        keys: "Space",
+        action: "toggle room",
+    },
+    KeyBinding {
+        keys: "a n",
+        action: "all/none",
+    },
+    KeyBinding {
+        keys: "Enter",
+        action: "edit/apply/refresh",
+    },
+    KeyBinding {
+        keys: "digits",
+        action: "exact value",
+    },
+];
+
 const TRAFFIC: &[KeyBinding] = &[
     KeyBinding {
         keys: "↑ ↓",
@@ -338,6 +365,7 @@ pub fn section_bindings(section: Section) -> &'static [KeyBinding] {
         Section::Animation => CONTENT_ANIMATION,
         Section::Smoothie => CONTENT_SMOOTHIE,
         Section::Theme => CONTENT_THEME,
+        Section::Heizung => CONTENT_HEIZUNG,
         Section::Pizzamat => &[
             KeyBinding {
                 keys: "↑ ↓",
@@ -387,7 +415,8 @@ pub fn help_text() -> String {
     }
     text.push_str("\nSafe mode\n");
     text.push_str("  Safe mode is on by default and confirms device MQTT publishes and\n");
-    text.push_str("  smoothiesaur HTTP commands. Pizzamat actions run immediately.\n");
+    text.push_str("  smoothiesaur HTTP commands and heating changes. Pizzamat actions\n");
+    text.push_str("  run immediately. Heating status reads need no confirmation.\n");
     text.push_str("  Press S to toggle safe mode; turning\n");
     text.push_str("  it off requires a second confirmation.\n");
     text.push_str("\nQuit semantics\n");

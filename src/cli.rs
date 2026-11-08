@@ -18,9 +18,9 @@ use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
 #[command(
     name = "subraumctl",
     version,
-    about = "Control the subraum over MQTT",
+    about = "Control the subraum over MQTT and EDI AMQP",
     long_about = "subraumctl controls the subraum lights, outlets, alerts, animation knobs and \
-smoothiesaur over MQTT (TCP) and HTTP, and Pizzamat food orders over EDI AMQP. \
+smoothiesaur over MQTT (TCP) and HTTP, and heating and Pizzamat food orders over EDI AMQP. \
 It also provides a keyboard-driven ratatui TUI \
 with safe mode, automatic reconnects, a live traffic pane and an application log pane.",
     after_help = "Broker: normal MQTT over TCP (tcp:// or ssl://), no WebSockets.\n\
@@ -90,6 +90,14 @@ pub struct GlobalArgs {
         default_value = DEFAULT_SMOOTHIE_URL
     )]
     pub smoothiesaur_url: String,
+
+    /// Heating EDI AMQP endpoint (independent of --broker)
+    #[arg(long, global = true, env = "SUBRAUMCTL_HEIZUNG_AMQP_URL", default_value = crate::heizung::DEFAULT_AMQP_URL)]
+    pub heizung_amqp_url: String,
+
+    /// Heating connection/reply timeout in seconds (1..=120)
+    #[arg(long, global = true, env = "SUBRAUMCTL_HEIZUNG_TIMEOUT", default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..=120))]
+    pub heizung_timeout: u64,
 
     /// Pizzamat EDI AMQP endpoint
     #[arg(long, global = true, env = "SUBRAUMCTL_PIZZAMAT_AMQP_URL", default_value = crate::pizzamat::DEFAULT_AMQP_URL)]
@@ -189,6 +197,15 @@ pub enum CliCommand {
     )]
     Smoothiesaur(SmoothieArgs),
 
+    /// Read or set per-room heating targets over EDI AMQP
+    ///
+    /// Publishes to exchange cmd, routing key heizung; replies arrive on msg.
+    /// Reads report target temperature and time remaining, not measured temperature.
+    #[command(
+        after_help = "Examples:\n  subraumctl heizung rooms\n  subraumctl heizung status\n  subraumctl heizung get hack make\n  subraumctl heizung set hack make 21.5 -d 120\n  subraumctl heizung set --all 20\n  subraumctl heizung status hack --watch"
+    )]
+    Heizung(HeizungArgs),
+
     /// Connect, print broker information and the alert condition
     Status,
 
@@ -215,7 +232,7 @@ pub enum CliCommand {
 
     /// Start the interactive keyboard-driven TUI
     #[command(
-        after_help = "Examples:\n  subraumctl tui\n  subraumctl tui --view animation --accent-color teal\n  subraumctl tui --theme high-contrast --error-color 'rgb(255,80,80)'\n  subraumctl tui --no-safe-mode"
+        after_help = "Examples:\n  subraumctl tui\n  subraumctl tui --view animation --accent-color teal\n  subraumctl tui --view heizung\n  subraumctl tui --theme high-contrast --error-color 'rgb(255,80,80)'\n  subraumctl tui --no-safe-mode"
     )]
     Tui(TuiArgs),
 
@@ -427,6 +444,54 @@ pub enum SmoothieCommand {
 }
 
 #[derive(Args, Debug)]
+pub struct HeizungArgs {
+    #[command(subcommand)]
+    pub command: HeizungCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum HeizungCommand {
+    /// List the six known rooms without connecting
+    Rooms,
+
+    /// Read targets and remaining times (all rooms when omitted)
+    #[command(visible_alias = "get")]
+    Status {
+        #[arg(value_enum)]
+        rooms: Vec<crate::heizung::Room>,
+
+        /// Poll until interrupted
+        #[arg(long)]
+        watch: bool,
+
+        /// Seconds between completed reads when watching
+        #[arg(long, default_value_t = 5, requires = "watch", value_parser = clap::value_parser!(u64).range(1..=3600))]
+        interval: u64,
+    },
+
+    /// Set targets for selected rooms; firmware returns to standby after duration
+    ///
+    /// Wire arguments: set <rooms...> <temperature> -d <minutes>.
+    /// Temperature: 15..=25 Celsius in 0.1-degree steps. Duration 0 resets the timer.
+    #[command(allow_missing_positional = true)]
+    Set {
+        #[arg(value_enum, required_unless_present = "all", conflicts_with = "all")]
+        rooms: Vec<crate::heizung::Room>,
+
+        /// Target temperature in Celsius
+        temperature: f64,
+
+        /// Explicitly select every known room
+        #[arg(long)]
+        all: bool,
+
+        /// Duration in minutes (0..=35791; service default 180)
+        #[arg(short = 'd', long, default_value_t = crate::heizung::DEFAULT_DURATION, value_parser = clap::value_parser!(u32).range(0..=crate::heizung::MAX_DURATION as i64))]
+        duration: u32,
+    },
+}
+
+#[derive(Args, Debug)]
 pub struct PublishArgs {
     /// MQTT topic
     pub topic: String,
@@ -501,6 +566,8 @@ pub enum TuiView {
     Theme,
     #[value(name = "pizzamat", alias = "pizza")]
     Pizzamat,
+    #[value(name = "heizung")]
+    Heizung,
 }
 
 #[derive(Args, Debug)]
@@ -632,6 +699,60 @@ mod tests {
     #[test]
     fn command_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn heating_room_selection_and_duration() {
+        let cli = Cli::try_parse_from([
+            "subraumctl",
+            "heizung",
+            "set",
+            "hack",
+            "make",
+            "21.5",
+            "-d",
+            "120",
+        ])
+        .unwrap();
+        match cli.command {
+            CliCommand::Heizung(HeizungArgs {
+                command:
+                    HeizungCommand::Set {
+                        rooms,
+                        temperature,
+                        duration,
+                        all,
+                    },
+            }) => {
+                assert_eq!(
+                    rooms,
+                    vec![crate::heizung::Room::Hack, crate::heizung::Room::Make]
+                );
+                assert_eq!(temperature, 21.5);
+                assert_eq!(duration, 120);
+                assert!(!all);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+        for args in [
+            vec!["set", "--all", "20"],
+            vec!["get", "hack"],
+            vec!["status"],
+            vec!["status", "make", "--watch", "--interval", "1"],
+        ] {
+            assert!(Cli::try_parse_from(["subraumctl", "heizung"].into_iter().chain(args)).is_ok());
+        }
+        for args in [
+            vec!["set", "20"],
+            vec!["set", "hack", "--all", "20"],
+            vec!["get", "unknown"],
+            vec!["set", "make", "20", "-d", "35792"],
+            vec!["status", "--watch", "--interval", "0"],
+        ] {
+            assert!(
+                Cli::try_parse_from(["subraumctl", "heizung"].into_iter().chain(args)).is_err()
+            );
+        }
     }
 
     #[test]

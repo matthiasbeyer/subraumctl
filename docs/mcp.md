@@ -8,8 +8,8 @@ equipment through unrestricted CLI/MQTT access. Only explicitly registered tools
 are available, and config permissions restrict both discovery and execution.
 
 There is no arbitrary subscription, watch/monitor, file-reading, shell, or generic
-CLI tool. Device reads subscribe only to fixed, known status topics and return selected
-decoded fields, never raw payloads or unknown device IDs. Broker addresses,
+CLI tool. Device reads use fixed, known status topics or the bounded heating EDI API
+and return selected decoded fields, never raw payloads or unknown device IDs. Broker addresses,
 credentials, HTTP response bodies, and raw backend errors are not tool results.
 Allowed status fields still describe the space; set their groups to `x` if that
 information should not be shared.
@@ -81,6 +81,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `alert` | `alert_led` | `alert_radiation`, `alert_sob` | `w` |
 | `system` | — | `system_telinit` | `w` |
 | `knob` | `knob_list`, `knob_get` | `knob_set` | `w` |
+| `heizung` | `heizung_rooms`, `heizung_get`, `heizung_status` | `heizung_set` | `w` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `status` | `status` | — | `r` |
@@ -92,7 +93,14 @@ Examples of tool arguments: `dmx` accepts
 `knob_get` accepts `{"knob":"cx"}`; `knob_set` additionally takes `"value":42`.
 Switches use `"state":"on"`/`"off"`. The advertised schemas list enum choices.
 
-Live device reads are one-shot snapshots, using retained messages where available.
+Heating reads accept `{"rooms":["hack","make"]}` (all rooms when omitted).
+`heizung_set` accepts `{"rooms":["hack"],"temperature":21.5,"duration_minutes":120}`
+or `{"all":true,"temperature":20}`. Reads return targets and remaining seconds,
+not measured temperatures. Heating uses its own startup-configured AMQP endpoint
+and `--heizung-timeout`, independently of MQTT `--broker`/`--wait`.
+See [heating commands and protocol](heizung.md) for details.
+
+Live MQTT device reads are one-shot snapshots, using retained messages where available.
 `--wait` bounds collection (default 3 seconds, clamped to 1–30 in MCP); missing
 values are `null`, malformed numeric/boolean readings are `null`, and unknown
 alert conditions become `unknown`. MQTT sessions are always clean; MCP rejects
