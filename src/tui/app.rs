@@ -3,6 +3,10 @@
 use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+#[cfg(feature = "tui-mouse")]
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+#[cfg(feature = "tui-mouse")]
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Color;
 use throbber_widgets_tui::ThrobberState;
 use tokio::sync::mpsc::UnboundedSender;
@@ -339,6 +343,8 @@ pub struct App {
     pub smoothie: SmoothieState,
     pub theme_view: ThemeViewState,
     pub text_input: Option<TextInputState>,
+    #[cfg(feature = "tui-mouse")]
+    last_mouse_click: Option<(Instant, u16, u16, Section)>,
 }
 
 impl App {
@@ -432,6 +438,8 @@ impl App {
             },
             theme_view: ThemeViewState::default(),
             text_input: None,
+            #[cfg(feature = "tui-mouse")]
+            last_mouse_click: None,
         };
 
         if connect {
@@ -460,6 +468,510 @@ impl App {
             kind,
             at: Instant::now(),
         });
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    pub fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) {
+        if self.popup.is_some() {
+            if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                self.handle_popup_mouse(mouse, area);
+            } else if mouse.kind == MouseEventKind::ScrollUp
+                || mouse.kind == MouseEventKind::ScrollDown
+            {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    -1
+                } else {
+                    1
+                };
+                self.handle_scroll(mouse, area, direction);
+            }
+            return;
+        }
+        if matches!(
+            mouse.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) {
+            if self.popup.is_some() {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    -1
+                } else {
+                    1
+                };
+                self.handle_scroll(mouse, area, direction);
+                return;
+            }
+            if self.text_input.is_some() {
+                return;
+            }
+            let (_, _, traffic, log, _, _) = layout_areas(area, self.show_log, self.log_height_pct);
+            let point = Position::new(mouse.column, mouse.row);
+            if traffic.contains(point) || (self.show_log && log.contains(point)) {
+                return;
+            }
+            let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                -1
+            } else {
+                1
+            };
+            self.handle_scroll(mouse, area, direction);
+            return;
+        }
+        let pressed = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left));
+        let dragging = matches!(mouse.kind, MouseEventKind::Drag(MouseButton::Left));
+        let double_click = pressed && self.is_double_click(mouse);
+        if (!pressed && !dragging) || self.popup.is_some() || self.text_input.is_some() {
+            return;
+        }
+
+        let (header, body, traffic, log, _, _) =
+            layout_areas(area, self.show_log, self.log_height_pct);
+        if header.contains(Position::new(mouse.column, mouse.row)) {
+            self.zone = FocusZone::Content;
+            return;
+        }
+        if traffic.contains(Position::new(mouse.column, mouse.row)) {
+            self.zone = FocusZone::Traffic;
+            self.select_traffic_row(mouse.row, traffic);
+            return;
+        }
+        if self.show_log && log.contains(Position::new(mouse.column, mouse.row)) {
+            self.zone = FocusZone::AppLog;
+            return;
+        }
+        let body_columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(24), Constraint::Min(20)])
+            .split(body);
+        if body_columns[0].contains(Position::new(mouse.column, mouse.row)) {
+            self.zone = FocusZone::Sidebar;
+            let index = mouse
+                .row
+                .saturating_sub(body_columns[0].y.saturating_add(1))
+                as usize;
+            if index < Section::ALL.len() {
+                self.change_section(Section::ALL[index]);
+            }
+            return;
+        }
+        self.zone = FocusZone::Content;
+        self.handle_content_click(mouse, body_columns[1], dragging, double_click);
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn is_double_click(&mut self, mouse: MouseEvent) -> bool {
+        let now = Instant::now();
+        let previous = self
+            .last_mouse_click
+            .replace((now, mouse.column, mouse.row, self.section));
+        previous.is_some_and(|(at, column, row, section)| {
+            section == self.section
+                && column == mouse.column
+                && row == mouse.row
+                && now.duration_since(at) <= Duration::from_millis(500)
+        })
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn handle_popup_mouse(&mut self, mouse: MouseEvent, area: Rect) {
+        let Some(popup) = self.popup.take() else {
+            return;
+        };
+        let choice = popup_button_choice(&popup, mouse, area);
+        let Some(choice) = choice else {
+            self.popup = Some(popup);
+            return;
+        };
+        match popup {
+            Popup::Quit { .. } => {
+                if choice.is_confirm() {
+                    self.should_quit = true;
+                } else {
+                    self.set_status("quit cancelled", StatusKind::Info);
+                }
+            }
+            Popup::SafeModeOff { .. } => {
+                if choice.is_confirm() {
+                    self.safe_mode = false;
+                    self.set_status("safe mode disabled", StatusKind::Error);
+                } else {
+                    self.set_status("safe mode remains enabled", StatusKind::Info);
+                }
+            }
+            Popup::ConfirmCommand { pending, .. } => {
+                if choice.is_confirm() {
+                    match pending {
+                        PendingCommand::Device { actions, .. } => self.send_actions(actions),
+                        PendingCommand::Heizung(request) => self.send_heizung(request),
+                    }
+                } else {
+                    self.set_status("command cancelled", StatusKind::Info);
+                }
+            }
+            Popup::ThemeReset { .. } => {
+                if choice.is_confirm() {
+                    self.theme = Theme::preset(self.theme_preset);
+                    self.set_status("theme reset", StatusKind::Success);
+                } else {
+                    self.set_status("theme reset cancelled", StatusKind::Info);
+                }
+            }
+            other => self.popup = Some(other),
+        }
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn handle_scroll(&mut self, mouse: MouseEvent, area: Rect, direction: i32) {
+        if self.popup.is_some() {
+            if let Some(Popup::Help { scroll }) = &mut self.popup {
+                *scroll = if direction < 0 {
+                    scroll.saturating_sub(3)
+                } else {
+                    scroll.saturating_add(3)
+                };
+            }
+            return;
+        }
+        if self.text_input.is_some() {
+            return;
+        }
+
+        let point = Position::new(mouse.column, mouse.row);
+        let (_, body, traffic, log, _, _) = layout_areas(area, self.show_log, self.log_height_pct);
+        let body_columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(24), Constraint::Min(20)])
+            .split(body);
+        if traffic.contains(point) {
+            self.zone = FocusZone::Traffic;
+            let len = self.traffic.filtered(self.section).len();
+            if len > 0 {
+                let current = self.traffic_selected.unwrap_or_else(|| len - 1);
+                self.traffic_selected = Some(if direction < 0 {
+                    current.saturating_sub(3)
+                } else {
+                    (current + 3).min(len - 1)
+                });
+            }
+        } else if self.show_log && log.contains(point) {
+            self.zone = FocusZone::AppLog;
+        } else if body_columns[0].contains(point) {
+            self.zone = FocusZone::Sidebar;
+            for _ in 0..3 {
+                self.change_section(if direction < 0 {
+                    self.section.prev()
+                } else {
+                    self.section.next()
+                });
+            }
+        } else if body_columns[1].contains(point) {
+            self.zone = FocusZone::Content;
+            let key = KeyEvent::new(
+                if direction < 0 {
+                    KeyCode::Up
+                } else {
+                    KeyCode::Down
+                },
+                KeyModifiers::NONE,
+            );
+            for _ in 0..3 {
+                self.handle_content_key(key);
+            }
+        }
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn select_traffic_row(&mut self, row: u16, area: Rect) {
+        if row <= area.y || row >= area.y + area.height.saturating_sub(1) {
+            return;
+        }
+        let len = self.traffic.filtered(self.section).len();
+        let visible_height = area.height.saturating_sub(2) as usize;
+        if len == 0 || visible_height == 0 {
+            return;
+        }
+        let selected = self.traffic_selected.map(|index| index.min(len - 1));
+        let start = if let Some(selected) = selected {
+            selected.saturating_sub(visible_height.saturating_sub(1))
+        } else {
+            len.saturating_sub(visible_height)
+        };
+        let index = start + row.saturating_sub(area.y.saturating_add(1)) as usize;
+        if index < len {
+            self.traffic_selected = Some(index);
+            if self.popup.is_some() {
+                return;
+            }
+            if let Some(entry) = self.traffic.filtered(self.section).get(index) {
+                self.popup = Some(Popup::TrafficDetail {
+                    entry: (*entry).clone(),
+                });
+            }
+        }
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn handle_content_click(
+        &mut self,
+        mouse: MouseEvent,
+        area: Rect,
+        dragging: bool,
+        double_click: bool,
+    ) {
+        if dragging
+            && !matches!(
+                self.section,
+                Section::WhiteLight | Section::Animation | Section::Smoothie
+            )
+        {
+            return;
+        }
+        let point = Position::new(mouse.column, mouse.row);
+        match self.section {
+            Section::Overview => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(7),
+                        Constraint::Length(6),
+                        Constraint::Min(5),
+                    ])
+                    .split(area);
+                if rows[2].contains(point) {
+                    let index = mouse.row.saturating_sub(rows[2].y) as usize;
+                    if index < Section::ALL.len() {
+                        self.overview.focus = index;
+                        self.change_section(Section::ALL[index]);
+                    }
+                }
+            }
+            Section::Lighting => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(5), Constraint::Length(2)])
+                    .split(area);
+                let columns = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+                    .split(rows[0]);
+                if columns[0].contains(point) {
+                    let visible = self.visible_lighting_groups();
+                    let index = mouse.row.saturating_sub(columns[0].y.saturating_add(1)) as usize;
+                    if let Some(group) = visible.get(index) {
+                        self.lighting.group = *group;
+                        if double_click {
+                            self.send_dmx();
+                        }
+                    }
+                } else if columns[1].contains(point) {
+                    let index = mouse.row.saturating_sub(columns[1].y.saturating_add(2)) as usize;
+                    if index < DmxAnimation::ALL.len() {
+                        self.lighting.animation = index;
+                        if double_click {
+                            self.send_dmx();
+                        }
+                    }
+                } else if rows[1].contains(point) && double_click {
+                    self.send_dmx();
+                }
+            }
+            Section::WhiteLight => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),
+                        Constraint::Length(1),
+                        Constraint::Min(5),
+                    ])
+                    .split(area);
+                let gauges = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[0]);
+                if gauges[0].contains(point)
+                    || (dragging && self.white_light.focus == 0 && rows[0].contains(point))
+                {
+                    self.white_light.focus = 0;
+                    let ratio = mouse.column.saturating_sub(gauges[0].x.saturating_add(1)) as f64
+                        / gauges[0].width.saturating_sub(2).max(1) as f64;
+                    self.white_light.warm = (ratio.clamp(0.0, 1.0) * 255.0).round() as u8;
+                } else if gauges[1].contains(point)
+                    || (dragging && self.white_light.focus == 1 && rows[0].contains(point))
+                {
+                    self.white_light.focus = 1;
+                    let ratio = mouse.column.saturating_sub(gauges[1].x.saturating_add(1)) as f64
+                        / gauges[1].width.saturating_sub(2).max(1) as f64;
+                    self.white_light.cold = (ratio.clamp(0.0, 1.0) * 255.0).round() as u8;
+                } else if rows[1].contains(point) {
+                    self.apply_white_light();
+                } else if rows[2].contains(point) {
+                    let visible = self.visible_white_light_cells();
+                    let selected = self
+                        .white_light
+                        .focus
+                        .checked_sub(3)
+                        .and_then(|focus| visible.iter().position(|cell| *cell == focus));
+                    let visible_rows = rows[2].height.saturating_sub(3) as usize;
+                    let start = selected
+                        .map(|index| index.saturating_sub(visible_rows.saturating_sub(1)))
+                        .unwrap_or(0);
+                    if let Some(index) =
+                        white_light_row_index(rows[2], mouse.row).map(|index| start + index)
+                    {
+                        if let Some(cell) = visible.get(index) {
+                            self.white_light.focus = 3 + *cell;
+                            if double_click {
+                                self.white_light.selected[*cell] = true;
+                                self.apply_white_light();
+                            } else {
+                                self.white_light.selected[*cell] =
+                                    !self.white_light.selected[*cell];
+                            }
+                        }
+                    }
+                }
+            }
+            Section::Outlets => {
+                let row = mouse.row.saturating_sub(area.y.saturating_add(2)) as usize;
+                if row < Outlet::ALL.len() {
+                    self.outlets.row = row;
+                    if let Some(action) = outlet_action_at(area, mouse.column) {
+                        self.outlets.action = action;
+                    }
+                    if double_click {
+                        self.send_outlet();
+                    }
+                }
+            }
+            Section::Alerts => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(5), Constraint::Min(5)])
+                    .split(area);
+                let index = mouse.row.saturating_sub(rows[1].y.saturating_add(1)) as usize;
+                if rows[1].contains(point) && index < 6 {
+                    self.alerts.focus = index;
+                    if double_click {
+                        self.send_alert();
+                    }
+                }
+            }
+            Section::System => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(7), Constraint::Min(4)])
+                    .split(area);
+                let index = mouse.row.saturating_sub(rows[1].y.saturating_add(1)) as usize;
+                if rows[1].contains(point) && index < 2 {
+                    self.system.focus = index;
+                    if double_click {
+                        self.request_command(ControlCommand::Telinit { on: index == 0 });
+                    }
+                }
+            }
+            Section::Animation => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(2),
+                        Constraint::Min(5),
+                        Constraint::Length(4),
+                    ])
+                    .split(area);
+                let visible = self.visible_knobs();
+                let index = mouse.row.saturating_sub(rows[1].y.saturating_add(1)) as usize;
+                if rows[1].contains(point)
+                    || (dragging
+                        && visible.contains(&self.animation.focus)
+                        && mouse.row >= rows[1].y
+                        && mouse.row < rows[1].bottom())
+                {
+                    let index = if rows[1].contains(point) {
+                        index
+                    } else {
+                        visible
+                            .iter()
+                            .position(|knob| *knob == self.animation.focus)
+                            .unwrap_or(index)
+                    };
+                    if let Some(knob) = visible.get(index) {
+                        self.animation.focus = *knob;
+                        let left = rows[1].x.saturating_add(2 + 12 + 8 + 1);
+                        let bar_width = 20u16.min(rows[1].right().saturating_sub(left));
+                        if mouse.column >= left && mouse.column < left.saturating_add(bar_width) {
+                            let ratio = mouse.column.saturating_sub(left) as f64
+                                / bar_width.saturating_sub(1).max(1) as f64;
+                            let spec = &KNOB_SPECS[*knob];
+                            self.animation.values[*knob] =
+                                Some(spec.min + ratio.clamp(0.0, 1.0) * (spec.max - spec.min));
+                            self.animation.dirty[*knob] = true;
+                        }
+                        if double_click {
+                            self.send_knob();
+                        }
+                    }
+                }
+            }
+            Section::Smoothie => {
+                let columns = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(area);
+                let left = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(10), Constraint::Min(5)])
+                    .split(columns[0]);
+                let relays_row = mouse.row.saturating_sub(left[0].y.saturating_add(1)) as usize;
+                if left[0].contains(point) && relays_row < 7 {
+                    self.smoothie.focus = relays_row;
+                    self.smoothie.relay_choice[relays_row] =
+                        mouse.column < left[0].x + left[0].width * 3 / 4;
+                    if double_click {
+                        self.send_smoothie();
+                    }
+                } else if left[1].contains(point) {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Length(3), Constraint::Min(2)])
+                        .split(left[1]);
+                    if chunks[0].contains(point)
+                        || (dragging && self.smoothie.focus == 7 && left[1].contains(point))
+                    {
+                        self.smoothie.focus = 7;
+                        let ratio = mouse.column.saturating_sub(chunks[0].x.saturating_add(1))
+                            as f64
+                            / chunks[0].width.saturating_sub(2).max(1) as f64;
+                        self.smoothie.laser = (ratio.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    } else if chunks[1].contains(point) {
+                        self.smoothie.focus = if mouse.column < chunks[1].x + 14 {
+                            7
+                        } else {
+                            8
+                        };
+                    }
+                    if double_click && (left[0].contains(point) || left[1].contains(point)) {
+                        self.send_smoothie();
+                    }
+                }
+            }
+            Section::Theme => {
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(6), Constraint::Length(3)])
+                    .split(area);
+                let index = mouse.row.saturating_sub(rows[0].y.saturating_add(2)) as usize;
+                if rows[0].contains(point) && index < ThemeRole::ALL.len() {
+                    self.theme_view.focus = index;
+                    let role = ThemeRole::ALL[index];
+                    let current = self.theme.get(role);
+                    let default = Theme::preset(self.theme_preset).get(role);
+                    self.popup = Some(Popup::ColorPicker {
+                        picker: ColorPicker::new(role, current, default),
+                    });
+                }
+            }
+            // Mouse interaction is not implemented for these sections yet.
+            Section::Pizzamat | Section::Heizung | Section::Climate | Section::Power => {}
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -2034,6 +2546,116 @@ impl App {
     }
 }
 
+#[cfg(feature = "tui-mouse")]
+fn outlet_action_at(area: Rect, column: u16) -> Option<usize> {
+    let inner_x = area.x.saturating_add(1);
+    let inner_width = area.width.saturating_sub(2);
+    let fixed_columns = 5 + 5 + 8;
+    let spacing = 3;
+    let first_column = inner_width.saturating_sub(fixed_columns + spacing);
+    let on_start = inner_x.saturating_add(first_column).saturating_add(1);
+    let off_start = on_start.saturating_add(6);
+    if column >= on_start && column < on_start.saturating_add(5) {
+        Some(0)
+    } else if column >= off_start && column < off_start.saturating_add(5) {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+#[cfg(feature = "tui-mouse")]
+fn white_light_row_index(area: Rect, row: u16) -> Option<usize> {
+    let inner_top = area.y.saturating_add(1);
+    let inner_bottom = area.bottom().saturating_sub(1);
+    if area.height < 4 || row < inner_top.saturating_add(1) || row >= inner_bottom {
+        None
+    } else {
+        Some(row.saturating_sub(inner_top.saturating_add(1)) as usize)
+    }
+}
+
+#[cfg(feature = "tui-mouse")]
+fn popup_button_choice(popup: &Popup, mouse: MouseEvent, area: Rect) -> Option<ConfirmChoice> {
+    let (percent_x, percent_y, button_line, confirm_width) = match popup {
+        Popup::Quit { .. } => (50, 30, 2, 8),
+        Popup::SafeModeOff { .. } => (58, 32, 3, 11),
+        Popup::ConfirmCommand { pending, .. } => (80, 50, pending.preview_lines(4).len() + 1, 8),
+        Popup::ThemeReset { .. } => (56, 32, 3, 9),
+        _ => return None,
+    };
+    let popup_area = centered_rect(percent_x, percent_y, area);
+    let inner = Rect::new(
+        popup_area.x.saturating_add(1),
+        popup_area.y.saturating_add(1),
+        popup_area.width.saturating_sub(2),
+        popup_area.height.saturating_sub(2),
+    );
+    if mouse.row != inner.y.saturating_add(button_line as u16) {
+        return None;
+    }
+    let x = mouse.column.saturating_sub(inner.x);
+    let confirm_start = 13;
+    if x <= 9 || (x >= confirm_start && x < confirm_start + confirm_width) {
+        Some(if x >= confirm_start {
+            ConfirmChoice::Confirm
+        } else {
+            ConfirmChoice::Cancel
+        })
+    } else {
+        None
+    }
+}
+
+#[cfg(feature = "tui-mouse")]
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+    let horizontal = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1]);
+    horizontal[1]
+}
+
+#[cfg(feature = "tui-mouse")]
+fn layout_areas(
+    area: Rect,
+    show_log: bool,
+    log_height_pct: u16,
+) -> (Rect, Rect, Rect, Rect, Rect, Rect) {
+    let log_height = if show_log {
+        (area.height as u32 * log_height_pct as u32 / 100) as u16
+    } else {
+        0
+    };
+    let traffic_height = (area.height / 6).clamp(5, 10);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(5),
+            Constraint::Length(traffic_height),
+            Constraint::Length(log_height),
+            Constraint::Length(1),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    (
+        chunks[0], chunks[1], chunks[2], chunks[3], chunks[4], chunks[5],
+    )
+}
+
 fn next_in(list: &[usize], current: usize, forward: bool) -> usize {
     if list.is_empty() {
         return current;
@@ -2107,6 +2729,194 @@ mod tests {
         assert_eq!(next_in(&list, 2, false), 6);
         assert_eq!(next_in(&list, 5, true), 2);
         assert_eq!(next_in(&[], 3, true), 3);
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    fn test_app() -> App {
+        let (mqtt_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (http_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let options = TuiOptions {
+            mqtt: crate::mqtt::MqttOptions::new(crate::mqtt::DEFAULT_BROKER),
+            view: TuiView::Overview,
+            connect: false,
+            safe_mode: false,
+            theme: Theme::preset(ThemePreset::Dark),
+            theme_preset: ThemePreset::Dark,
+            smoothie_url: String::new(),
+            pizzamat: crate::pizzamat::Options::default(),
+            heizung: crate::heizung::Options {
+                amqp_url: "invalid://PRIVATE".to_string(),
+                timeout: std::time::Duration::from_secs(1),
+            },
+            influx: crate::influx::Options::default(),
+            graph_minutes: 60,
+            graph_layout: crate::cli::GraphLayout::Table,
+            verbose: 0,
+            dry_run: true,
+        };
+        let (pizza_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (heizung_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (climate_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (power_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        App::new(
+            options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
+        )
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn mouse_click_on_sidebar_changes_section() {
+        let mut app = test_app();
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 3,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 40),
+        );
+        assert_eq!(app.section, Section::Lighting);
+        assert_eq!(app.zone, FocusZone::Sidebar);
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn outlet_mouse_click_can_switch_from_off_back_to_on() {
+        let mut app = test_app();
+        app.section = Section::Outlets;
+        let terminal = Rect::new(0, 0, 100, 40);
+        let (_, body, _, _, _, _) = layout_areas(terminal, app.show_log, app.log_height_pct);
+        let content = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(24), Constraint::Min(20)])
+            .split(body)[1];
+        // Match the table's column widths: 1-cell border, 1-cell column gaps,
+        // then the two 5-cell action columns and the 8-cell status column.
+        let inner_width = content.width.saturating_sub(2);
+        let first_width = inner_width.saturating_sub(5 + 5 + 8 + 3);
+        let on_column = content.x + 1 + first_width + 1;
+        let off_column = on_column + 6;
+        let row = content.y + 2;
+        let click = |column| MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        app.handle_mouse(click(off_column), terminal);
+        assert_eq!(app.outlets.action, 1);
+        app.handle_mouse(click(on_column), terminal);
+        assert_eq!(app.outlets.action, 0);
+        app.handle_mouse(click(off_column), terminal);
+        assert_eq!(app.outlets.action, 1);
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn white_light_mouse_rows_skip_table_border_and_header() {
+        let table = Rect::new(10, 20, 40, 10);
+        assert_eq!(white_light_row_index(table, 20), None);
+        assert_eq!(white_light_row_index(table, 21), None);
+        assert_eq!(white_light_row_index(table, 22), Some(0));
+        assert_eq!(white_light_row_index(table, 23), Some(1));
+        assert_eq!(white_light_row_index(table, 29), None);
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn mouse_click_on_safe_mode_confirm_disables_it() {
+        let mut app = test_app();
+        app.safe_mode = true;
+        app.popup = Some(Popup::SafeModeOff {
+            selected: ConfirmChoice::Cancel,
+        });
+        let area = Rect::new(0, 0, 100, 40);
+        let popup_area = centered_rect(58, 32, area);
+        let inner_x = popup_area.x + 1;
+        let inner_y = popup_area.y + 1;
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: inner_x + 13,
+                row: inner_y + 3,
+                modifiers: KeyModifiers::NONE,
+            },
+            area,
+        );
+        assert!(!app.safe_mode);
+        assert!(app.popup.is_none());
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn double_click_on_alert_sends_but_single_click_only_selects() {
+        let mut app = test_app();
+        app.connection = ConnectionState::Connected {
+            since: Instant::now(),
+        };
+        app.section = Section::Alerts;
+        let area = Rect::new(0, 0, 100, 40);
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 30,
+            row: 7,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_mouse(click, area);
+        assert_eq!(app.alerts.focus, 0);
+        assert!(app.traffic.filtered(Section::Alerts).is_empty());
+        app.handle_mouse(click, area);
+        assert!(!app.traffic.filtered(Section::Alerts).is_empty());
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn double_click_command_still_requires_safe_mode_confirmation() {
+        let mut app = test_app();
+        app.connection = ConnectionState::Connected {
+            since: Instant::now(),
+        };
+        app.safe_mode = true;
+        app.section = Section::Alerts;
+        let area = Rect::new(0, 0, 100, 40);
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 30,
+            row: 7,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_mouse(click, area);
+        app.handle_mouse(click, area);
+        assert!(matches!(app.popup, Some(Popup::ConfirmCommand { .. })));
+    }
+
+    #[cfg(feature = "tui-mouse")]
+    #[test]
+    fn mouse_drag_adjusts_a_slider() {
+        let mut app = test_app();
+        app.section = Section::WhiteLight;
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 30,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 40),
+        );
+        let first = app.white_light.warm;
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 50,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 40),
+        );
+        assert!(app.white_light.warm > first);
     }
 
     #[test]

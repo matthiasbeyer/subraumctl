@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 mcp = ["dep:rmcp", "dep:serde", "dep:toml"]
+tui-mouse = []
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
