@@ -14,7 +14,7 @@ use crate::action::{
 };
 use crate::cli::{
     AlertCommand, Cli, CliCommand, CompletionsArgs, GlobalArgs, KnobCommand, ManArgs, MonitorArgs,
-    MonitorKind, PublishArgs, SmoothieCommand, SubscribeArgs, SystemCommand, TuiArgs,
+    MonitorKind, MusicCommand, PublishArgs, SmoothieCommand, SubscribeArgs, SystemCommand, TuiArgs,
     WhiteLightCommand,
 };
 use crate::color::{Theme, ThemeRole, parse_color};
@@ -114,6 +114,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         CliCommand::Heizung(args) => heizung(&global, args.command).await,
         CliCommand::Climate(args) => climate(&global, args.command).await,
         CliCommand::Power(args) => power(&global, args.command).await,
+        CliCommand::Music(args) => music(&global, args.command).await,
         CliCommand::Publish(args) => publish(&global, args).await,
         CliCommand::Subscribe(args) => subscribe_command(&global, args).await,
         CliCommand::Monitor(args) => monitor(&global, args).await,
@@ -239,6 +240,103 @@ async fn power(global: &GlobalArgs, command: crate::cli::PowerCommand) -> Result
             result = &mut shutdown => { result?; return Ok(()); }
         }
     }
+}
+
+async fn music(global: &GlobalArgs, command: MusicCommand) -> Result<()> {
+    use crate::music::{self, Outcome, Request};
+
+    let options = music::Options::from_global(global);
+    match command {
+        MusicCommand::Stations => {
+            for station in music::STATIONS {
+                if global.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "station": station.id,
+                            "name": station.name,
+                        }))?
+                    );
+                } else if !global.quiet {
+                    println!("{:<16} {}", station.id, station.name);
+                }
+            }
+            Ok(())
+        }
+        MusicCommand::Status { watch, interval } => {
+            let shutdown = tokio::signal::ctrl_c();
+            tokio::pin!(shutdown);
+            loop {
+                let outcome = tokio::select! {
+                    result = music::execute(&options, &Request::Status, global.dry_run) => result?,
+                    result = &mut shutdown => { result?; return Ok(()); }
+                };
+                match outcome {
+                    Outcome::Status(status) => {
+                        print_music_status(&status, global.json, global.quiet)?
+                    }
+                    other => {
+                        if global.json {
+                            println!("{}", serde_json::to_string(&other.json())?);
+                        } else if !global.quiet {
+                            println!("dry-run: {}", Request::Status.command_preview());
+                        }
+                    }
+                }
+                if !watch || global.dry_run {
+                    return Ok(());
+                }
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
+                    result = &mut shutdown => { result?; return Ok(()); }
+                }
+            }
+        }
+        _ => {
+            let request = match command {
+                MusicCommand::Play => Request::Play,
+                MusicCommand::Pause => Request::Pause,
+                MusicCommand::Next => Request::Next,
+                MusicCommand::Previous => Request::Previous,
+                MusicCommand::Station { station } => Request::Station(station),
+                MusicCommand::Status { .. } | MusicCommand::Stations => unreachable!(),
+            };
+            let outcome = music::execute(&options, &request, global.dry_run).await?;
+            if global.json {
+                println!("{}", serde_json::to_string(&outcome.json())?);
+            } else if !global.quiet {
+                match outcome {
+                    Outcome::DryRun { command } => println!("dry-run: {command}"),
+                    _ => println!("music: {} sent", request.command_preview()),
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn print_music_status(
+    status: &crate::music::PlaybackStatus,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string(&status.json())?);
+    } else if !quiet {
+        println!("Music — {}", status.state_label());
+        println!("{}", status.display_title());
+        let time = status.time_label();
+        if !time.is_empty() {
+            if let Some(volume) = status.volume {
+                println!("{time}   volume {volume}");
+            } else {
+                println!("{time}");
+            }
+        } else if let Some(volume) = status.volume {
+            println!("volume {volume}");
+        }
+    }
+    Ok(())
 }
 
 async fn heizung(global: &GlobalArgs, command: crate::cli::HeizungCommand) -> Result<()> {
@@ -1114,6 +1212,7 @@ async fn run_tui(global: GlobalArgs, args: TuiArgs) -> Result<()> {
         smoothie_url: global.smoothiesaur_url.clone(),
         pizzamat: crate::pizzamat::Options::from_global(&global),
         heizung: crate::heizung::Options::from_global(&global),
+        music: crate::music::Options::from_global(&global),
         influx: crate::influx::Options::from_global(&global),
         graph_minutes: args.graph_minutes,
         graph_layout: args.graph_layout,

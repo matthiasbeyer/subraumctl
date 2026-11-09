@@ -39,10 +39,11 @@ pub enum Group {
     Climate,
     Power,
     Pizzamat,
+    Music,
 }
 
 impl Group {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Dmx,
         Self::WhiteLight,
         Self::Outlet,
@@ -56,6 +57,7 @@ impl Group {
         Self::Climate,
         Self::Power,
         Self::Pizzamat,
+        Self::Music,
     ];
 
     pub fn name(self) -> &'static str {
@@ -73,6 +75,7 @@ impl Group {
             Self::Climate => "climate",
             Self::Power => "power",
             Self::Pizzamat => "pizzamat",
+            Self::Music => "music",
         }
     }
 
@@ -89,6 +92,7 @@ impl Group {
                     | Self::Climate
                     | Self::Power
                     | Self::Pizzamat
+                    | Self::Music
             ),
             Access::Write => !matches!(self, Self::Status | Self::Climate | Self::Power),
         }

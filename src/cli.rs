@@ -12,6 +12,7 @@ use crate::action::{DmxAnimation, DmxGroup, Outlet, RadiationTarget, SmoothieRel
 use crate::color::ThemePreset;
 use crate::knob::Knob;
 use crate::mqtt::DEFAULT_BROKER;
+use crate::music::StationId;
 use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
 
 #[derive(Parser, Debug)]
@@ -129,6 +130,23 @@ pub struct GlobalArgs {
     )]
     pub pizzamat_timeout: u64,
 
+    /// MPD server address for music control
+    #[arg(
+        long,
+        global = true,
+        env = "SUBRAUMCTL_MPD_ADDRESS",
+        default_value = crate::music::DEFAULT_ADDRESS
+    )]
+    pub mpd_address: String,
+
+    /// MPD password (prefer the environment variable)
+    #[arg(long, global = true, env = "SUBRAUMCTL_MPD_PASSWORD")]
+    pub mpd_password: Option<String>,
+
+    /// MPD connection timeout in seconds (1..=30)
+    #[arg(long, global = true, env = "SUBRAUMCTL_MPD_TIMEOUT", default_value_t = 3, value_parser = clap::value_parser!(u64).range(1..=30))]
+    pub mpd_timeout: u64,
+
     /// Preview wire actions without publishing or sending them
     #[arg(long, global = true)]
     pub dry_run: bool,
@@ -226,6 +244,15 @@ pub enum CliCommand {
         after_help = "Examples:\n  subraumctl power status\n  subraumctl --json power status --mode latest\n  subraumctl power status --watch --interval 30"
     )]
     Power(PowerArgs),
+
+    /// Read the current MPD song and control playback or radio stations
+    ///
+    /// MPD runs on the music host (default audiomaster:6600). Station commands
+    /// clear the queue, add the station URI and start playback.
+    #[command(
+        after_help = "Examples:\n  subraumctl music status\n  subraumctl music play\n  subraumctl music pause\n  subraumctl music next\n  subraumctl music previous\n  subraumctl music stations\n  subraumctl music station groovesalad\n  subraumctl music status --watch --interval 5"
+    )]
+    Music(MusicArgs),
 
     /// Connect, print broker information and the alert condition
     Status,
@@ -491,6 +518,50 @@ pub enum PowerCommand {
     },
 }
 
+#[derive(Args, Debug)]
+pub struct MusicArgs {
+    #[command(subcommand)]
+    pub command: MusicCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MusicCommand {
+    /// Read the MPD playback state and current title
+    Status {
+        /// Poll until interrupted
+        #[arg(long)]
+        watch: bool,
+
+        /// Seconds between completed reads
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        interval: u64,
+    },
+
+    /// Start or resume playback
+    Play,
+
+    /// Pause playback
+    Pause,
+
+    /// Play the next queue entry
+    Next,
+
+    /// Play the previous queue entry
+    #[command(alias = "prev")]
+    Previous,
+
+    /// List the known radio stations
+    Stations,
+
+    /// Replace the queue with a radio station and play it
+    #[command(alias = "play-station")]
+    Station {
+        /// Station id from `music stations`
+        #[arg(value_enum)]
+        station: StationId,
+    },
+}
+
 #[derive(Subcommand, Debug)]
 pub enum ClimateCommand {
     /// Read all reported locations (15-minute averages by default)
@@ -635,6 +706,8 @@ pub enum TuiView {
     Climate,
     /// Meter power consumption by phase and total
     Power,
+    /// MPD playback and radio stations
+    Music,
 }
 
 #[derive(Args, Debug)]
@@ -907,6 +980,25 @@ mod tests {
                 other => panic!("unexpected white-light command: {other:?}"),
             },
             other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_music_commands_and_station_ids() {
+        let cli = Cli::try_parse_from(["subraumctl", "music", "station", "groovesalad"]).unwrap();
+        match cli.command {
+            CliCommand::Music(MusicArgs {
+                command: MusicCommand::Station { station },
+            }) => assert_eq!(station.id(), "groovesalad"),
+            other => panic!("unexpected command: {other:?}"),
+        }
+        assert!(Cli::try_parse_from(["subraumctl", "music", "prev"]).is_ok());
+        assert!(Cli::try_parse_from(["subraumctl", "music", "station", "no-such"]).is_err());
+        for command in ["status", "play", "pause", "next", "previous", "stations"] {
+            assert!(
+                Cli::try_parse_from(["subraumctl", "music", command]).is_ok(),
+                "{command}"
+            );
         }
     }
 

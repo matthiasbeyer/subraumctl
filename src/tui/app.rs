@@ -42,10 +42,11 @@ pub enum Section {
     Heizung,
     Climate,
     Power,
+    Music,
 }
 
 impl Section {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -59,6 +60,7 @@ impl Section {
         Self::Heizung,
         Self::Climate,
         Self::Power,
+        Self::Music,
     ];
 
     pub fn index(self) -> usize {
@@ -76,6 +78,7 @@ impl Section {
             Self::Heizung => 10,
             Self::Climate => 11,
             Self::Power => 12,
+            Self::Music => 13,
         }
     }
 
@@ -98,6 +101,7 @@ impl Section {
             Self::Heizung => "Heizung",
             Self::Climate => "Climate",
             Self::Power => "Power",
+            Self::Music => "Music",
         }
     }
 
@@ -124,6 +128,7 @@ impl Section {
             TuiView::Heizung => Self::Heizung,
             TuiView::Climate => Self::Climate,
             TuiView::Power => Self::Power,
+            TuiView::Music => Self::Music,
         }
     }
 }
@@ -311,6 +316,8 @@ pub struct App {
     pub climate: super::climate::State,
     pub power_tx: UnboundedSender<crate::influx::Mode>,
     pub power: super::power::State,
+    pub music_tx: Option<UnboundedSender<crate::music::Request>>,
+    pub music: super::music::State,
     pub graphs: super::graphs::Graphs,
     pub should_quit: bool,
     pub section: Section,
@@ -370,6 +377,8 @@ impl App {
             climate: super::climate::State::default(),
             power_tx,
             power: super::power::State::default(),
+            music_tx: None,
+            music: super::music::State::default(),
             should_quit: false,
             section,
             zone: FocusZone::Content,
@@ -1018,6 +1027,7 @@ impl App {
             Section::Heizung => self.handle_heizung_key(key),
             Section::Climate => self.handle_climate_key(key),
             Section::Power => self.handle_power_key(key),
+            Section::Music => self.handle_music_key(key),
         }
     }
 
@@ -1661,6 +1671,7 @@ impl App {
         self.maybe_refresh_heizung();
         self.maybe_refresh_climate();
         self.maybe_refresh_power();
+        self.maybe_refresh_music();
     }
 
     fn go_back(&mut self) {
@@ -1989,6 +2000,7 @@ impl App {
     pub fn on_tick(&mut self) {
         self.maybe_refresh_climate();
         self.maybe_refresh_power();
+        self.poll_music();
         self.throbber.calc_next();
         let clear_status = self
             .status

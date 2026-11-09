@@ -14,6 +14,7 @@ use super::*;
 pub(super) struct RecordingBackend(
     std::sync::Mutex<Vec<crate::action::ControlCommand>>,
     std::sync::Mutex<Vec<crate::heizung::Request>>,
+    std::sync::Mutex<Vec<crate::music::Request>>,
 );
 
 impl backend::Backend for RecordingBackend {
@@ -60,6 +61,20 @@ impl backend::Backend for RecordingBackend {
             json!({"command": request.operation.command(), "user": request.user, "args": request.args,
             "message": "Pizzamat reply"}),
         )
+    }
+
+    async fn music(
+        &self,
+        request: crate::music::Request,
+        _: RequestContext<RoleServer>,
+    ) -> eyre::Result<Value> {
+        self.2.lock().unwrap().push(request.clone());
+        Ok(match request {
+            crate::music::Request::Status => json!({
+                "state": "play", "display_title": "Test track"
+            }),
+            _ => json!({"submitted": true}),
+        })
     }
 
     async fn snapshot(
@@ -723,7 +738,7 @@ async fn opt_ins_are_disabled_by_default_and_publish_is_unfiltered_when_enabled(
 #[tokio::test]
 async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments() {
     tokio::time::timeout(Duration::from_secs(5), async {
-        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'\nheizung = 'r'\npizzamat = 'x'").unwrap();
+        let config = toml::from_str("[tools]\nalert = 'r'\nwhite_light = 'r'\nknob = 'r'\nsmoothiesaur = 'r'\ndmx = 'x'\nsystem = 'x'\nheizung = 'r'\npizzamat = 'x'\nmusic = 'r'").unwrap();
         let mut server = McpServer::new(config);
         tools::register(&mut server, Arc::new(RecordingBackend::default())).unwrap();
         let (mut client, task) = start(server);
@@ -731,7 +746,7 @@ async fn read_only_groups_expose_bounded_reads_without_topic_or_watch_arguments(
         let listed = client.request("tools/list", json!({})).await;
         let names: Vec<_> = listed["result"]["tools"].as_array().unwrap().iter()
             .map(|tool| tool["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["alert_led", "climate_history", "climate_status", "heizung_get", "heizung_rooms", "heizung_status", "knob_get", "knob_list", "power_history", "power_status", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
+        assert_eq!(names, ["alert_led", "climate_history", "climate_status", "heizung_get", "heizung_rooms", "heizung_status", "knob_get", "knob_list", "music_stations", "music_status", "power_history", "power_status", "smoothiesaur_status", "status", "white_light_cells", "white_light_status"]);
         for name in names {
             let arguments = if name == "knob_get" { json!({"knob": "cx"}) } else { json!({}) };
             let result = client.request("tools/call", json!({"name": name, "arguments": arguments})).await;

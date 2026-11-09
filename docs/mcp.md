@@ -87,6 +87,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `power` | `power_status`, `power_history` | — | `r` |
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
+| `music` | `music_status`, `music_stations` | `music_play`, `music_pause`, `music_next`, `music_previous`, `music_station` | `w` |
 | `status` | `status` | — | `r` |
 | `publish` | — | `publish` | `x` |
 
@@ -113,6 +114,13 @@ See [climate readings and protocol](climate.md).
 `l2_watts`, `l3_watts` and `total_watts`. Latest reads return one meter record
 with `sample_time_ms`; averages cover the last 15 minutes. It shares the InfluxDB
 startup options. See [power readings and protocol](power.md).
+
+`music_status` reads the MPD server configured at startup and returns the
+playback state, title, elapsed time and volume. `music_stations` returns the
+static station ids and names; `music_station` accepts
+`{"station":"groovesalad"}`. `music_play`, `music_pause`, `music_next` and
+`music_previous` take no arguments. The default MPD endpoint is
+`audiomaster:6600`; see [music playback and stations](music.md).
 
 ### Climate and power history
 

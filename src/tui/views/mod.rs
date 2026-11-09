@@ -13,6 +13,7 @@ pub mod animation;
 pub mod climate;
 pub mod heizung;
 pub mod lighting;
+pub mod music;
 pub mod outlets;
 pub mod overview;
 pub mod pizzamat;
@@ -37,6 +38,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         Section::Heizung => heizung::draw(frame, area, app),
         Section::Climate => climate::draw(frame, area, app),
         Section::Power => power::draw(frame, area, app),
+        Section::Music => music::draw(frame, area, app),
     }
 }
 

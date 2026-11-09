@@ -6,6 +6,7 @@ mod events;
 mod graphs;
 mod heizung;
 mod keymap;
+mod music;
 mod pizzamat;
 mod power;
 mod safe_mode;
@@ -44,6 +45,7 @@ pub struct TuiOptions {
     pub smoothie_url: String,
     pub pizzamat: crate::pizzamat::Options,
     pub heizung: crate::heizung::Options,
+    pub music: crate::music::Options,
     pub influx: crate::influx::Options,
     pub graph_minutes: u64,
     pub graph_layout: crate::cli::GraphLayout,
@@ -83,6 +85,14 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         heizung_rx,
         heizung_event_tx,
     );
+    let (music_tx, music_rx) = mpsc::unbounded_channel();
+    let (music_event_tx, mut music_event_rx) = mpsc::unbounded_channel();
+    music::spawn_worker(
+        options.music.clone(),
+        options.dry_run,
+        music_rx,
+        music_event_tx,
+    );
     let (climate_tx, climate_rx) = mpsc::unbounded_channel();
     let (climate_event_tx, mut climate_event_rx) = mpsc::unbounded_channel();
     climate::spawn_worker(
@@ -111,8 +121,10 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
     );
     app.graphs.tx = Some(graph_tx);
+    app.music_tx = Some(music_tx);
     app.maybe_refresh_climate();
     app.maybe_refresh_power();
+    app.maybe_refresh_music();
     let mut ticker = interval(Duration::from_millis(100));
 
     loop {
@@ -126,6 +138,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = http_event_rx.recv() => app.handle_http_event(event),
             Some(event) = pizza_event_rx.recv() => app.handle_pizzamat_event(event),
             Some(event) = heizung_event_rx.recv() => app.handle_heizung_event(event),
+            Some(event) = music_event_rx.recv() => app.handle_music_event(event),
             Some(event) = climate_event_rx.recv() => app.handle_climate_event(event),
             Some(event) = power_event_rx.recv() => app.handle_power_event(event),
             Some(event) = graph_event_rx.recv() => app.handle_graph_event(event),
