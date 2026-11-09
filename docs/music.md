@@ -75,13 +75,19 @@ Starting a station sends:
 
 ```text
 clear
-add "<station URI>"
+add "<resolved stream URI>"
 play
 ```
 
-`.pls` URLs are resolved by MPD. The two `hardbass` entries refer to files in
-the MPD library on the music host; the paths must exist there. The original
-`tts` announcements are not reproduced by subraumctl.
+Remote `.pls`, `.m3u` and `.m3u8` URLs are downloaded by subraumctl, parsed,
+and replaced with the first direct HTTP(S) stream URL before MPD sees them.
+This avoids relying on MPD's remote playlist support. Direct stream URLs are
+passed through unchanged. Playlist downloads use the `--mpd-timeout` value
+(minimum 5 seconds).
+
+The two `hardbass` entries refer to files in the MPD library on the music host;
+the paths must exist there. The original `tts` announcements are not reproduced
+by subraumctl.
 
 ## Connection and protocol
 

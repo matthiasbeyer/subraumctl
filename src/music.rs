@@ -10,6 +10,7 @@ use std::time::Duration;
 use clap::ValueEnum;
 use clap::builder::PossibleValue;
 use eyre::{Result, ensure, eyre};
+use reqwest::Url;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -19,6 +20,7 @@ use tokio::time::timeout;
 pub const DEFAULT_ADDRESS: &str = "audiomaster:6600";
 const MAX_RESPONSE_LINES: usize = 4096;
 const MAX_LINE_BYTES: usize = 8192;
+const MAX_PLAYLIST_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub struct Options {
@@ -609,6 +611,12 @@ pub async fn execute(options: &Options, request: &Request, dry_run: bool) -> Res
             command: request.command_preview(),
         });
     }
+    // MPD does not reliably expand remote playlist files. Resolve .pls/.m3u
+    // URLs here and add the direct stream instead.
+    let station_uri = match request {
+        Request::Station(id) => Some(resolve_playlist_uri(options, id.station().uri).await?),
+        _ => None,
+    };
     let mut connection = Connection::connect(options).await?;
     match request {
         Request::Status => Ok(Outcome::Status(connection.status().await?)),
@@ -630,18 +638,122 @@ pub async fn execute(options: &Options, request: &Request, dry_run: bool) -> Res
         }
         Request::Station(id) => {
             let station = id.station();
+            let uri = station_uri.as_deref().unwrap_or(station.uri);
             ensure!(
-                !station.uri.is_empty() && !station.uri.contains(['\n', '\r']),
+                !uri.is_empty() && !uri.contains(['\n', '\r']),
                 "station has no playable URI"
             );
             connection.send("clear").await?;
-            connection
-                .send(&format!("add {}", quote(station.uri)))
-                .await?;
+            connection.send(&format!("add {}", quote(uri))).await?;
             connection.send("play").await?;
             Ok(Outcome::Submitted)
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaylistKind {
+    Pls,
+    M3u,
+}
+
+fn playlist_kind(uri: &str) -> Option<PlaylistKind> {
+    let lower = uri.to_ascii_lowercase();
+    let path = lower.split(['?', '#']).next().unwrap_or_default();
+    if !(path.starts_with("http://") || path.starts_with("https://")) {
+        return None;
+    }
+    if path.ends_with(".pls") {
+        Some(PlaylistKind::Pls)
+    } else if path.ends_with(".m3u") || path.ends_with(".m3u8") {
+        Some(PlaylistKind::M3u)
+    } else {
+        None
+    }
+}
+
+async fn resolve_playlist_uri(options: &Options, uri: &str) -> Result<String> {
+    let Some(kind) = playlist_kind(uri) else {
+        return Ok(uri.to_string());
+    };
+    let client = reqwest::Client::builder()
+        .timeout(options.timeout.max(Duration::from_secs(5)))
+        .user_agent(concat!("subraumctl/", env!("CARGO_PKG_VERSION")))
+        .build()?;
+    let response = client
+        .get(uri)
+        .send()
+        .await
+        .map_err(|_| eyre!("playlist download failed: {uri}"))?;
+    ensure!(
+        response.status().is_success(),
+        "playlist download failed: {uri}"
+    );
+    let base = response.url().clone();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|_| eyre!("playlist download failed: {uri}"))?;
+    ensure!(
+        body.len() <= MAX_PLAYLIST_BYTES,
+        "playlist is too large: {uri}"
+    );
+    let text = String::from_utf8_lossy(&body);
+    match kind {
+        PlaylistKind::Pls => parse_pls(&text, &base),
+        PlaylistKind::M3u => parse_m3u(&text, &base),
+    }
+}
+
+fn parse_pls(text: &str, base: &Url) -> Result<String> {
+    let mut entries = Vec::new();
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(['[', '#']) {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let Some(index) = key.strip_prefix("file") else {
+            continue;
+        };
+        let index = index.parse::<usize>().unwrap_or(usize::MAX);
+        let value = value.trim().trim_matches('"').trim();
+        if !value.is_empty() {
+            entries.push((index, value.to_string()));
+        }
+    }
+    entries.sort_by_key(|(index, _)| *index);
+    let Some((_, value)) = entries.into_iter().next() else {
+        return Err(eyre!("playlist contains no stream URL"));
+    };
+    playlist_entry(base, &value)
+}
+
+fn parse_m3u(text: &str, base: &Url) -> Result<String> {
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        return playlist_entry(base, line);
+    }
+    Err(eyre!("playlist contains no stream URL"))
+}
+
+fn playlist_entry(base: &Url, value: &str) -> Result<String> {
+    let value = value.trim().trim_matches('"').trim();
+    ensure!(!value.is_empty(), "playlist entry is empty");
+    let url = base
+        .join(value)
+        .map_err(|_| eyre!("playlist entry is not a valid URL"))?;
+    ensure!(
+        matches!(url.scheme(), "http" | "https"),
+        "playlist entry uses an unsupported URL scheme"
+    );
+    Ok(url.to_string())
 }
 
 struct Connection {
@@ -831,6 +943,70 @@ mod tests {
         assert_eq!(quote("a b"), "\"a b\"");
         assert_eq!(quote("a\"b"), "\"a\\\"b\"");
         assert_eq!(quote("a\\b"), "\"a\\\\b\"");
+    }
+
+    #[test]
+    fn playlist_entries_are_parsed_and_resolved_against_the_source_url() {
+        let base = Url::parse("http://example.com/radio/list.pls").unwrap();
+        assert_eq!(
+            parse_pls(
+                "[playlist]\nFile2=http://b.example/live\nFile1=http://a.example/live\n",
+                &base
+            )
+            .unwrap(),
+            "http://a.example/live"
+        );
+        assert_eq!(
+            parse_pls("File1=/live\n", &base).unwrap(),
+            "http://example.com/live"
+        );
+        assert!(parse_pls("[playlist]\nTitle1=no file\n", &base).is_err());
+        assert_eq!(
+            parse_m3u(
+                "#EXTM3U\n#EXTINF:-1,Radio\nhttps://radio.example/live\n",
+                &base
+            )
+            .unwrap(),
+            "https://radio.example/live"
+        );
+        assert_eq!(
+            playlist_kind("http://example.com/a.PLS?x=1"),
+            Some(PlaylistKind::Pls)
+        );
+        assert_eq!(
+            playlist_kind("https://example.com/a.m3u8"),
+            Some(PlaylistKind::M3u)
+        );
+        assert_eq!(playlist_kind("https://example.com/live.mp3"), None);
+        assert_eq!(playlist_kind("hardbass/file.pls"), None);
+    }
+
+    #[tokio::test]
+    async fn remote_playlist_is_downloaded_and_resolved() {
+        use tokio::io::AsyncReadExt;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 2048];
+            let _ = socket.read(&mut request).await.unwrap();
+            let body = "File1=http://stream.example/live\n";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: audio/x-scpls\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+        let options = Options {
+            timeout: Duration::from_secs(2),
+            ..Options::default()
+        };
+        let resolved = resolve_playlist_uri(&options, &format!("http://{address}/radio.pls"))
+            .await
+            .unwrap();
+        assert_eq!(resolved, "http://stream.example/live");
+        server.await.unwrap();
     }
 
     #[tokio::test]
