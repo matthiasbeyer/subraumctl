@@ -5,6 +5,7 @@
 //! and reads the `OK`/`ACK` terminator. No MPD library is required.
 
 use std::collections::HashMap;
+use std::net::{Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
 use clap::ValueEnum;
@@ -18,6 +19,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::time::timeout;
 
 pub const DEFAULT_ADDRESS: &str = "audiomaster:6600";
+pub const DEFAULT_PORT: u16 = 6600;
 const MAX_RESPONSE_LINES: usize = 4096;
 const MAX_LINE_BYTES: usize = 8192;
 const MAX_PLAYLIST_BYTES: usize = 64 * 1024;
@@ -757,16 +759,52 @@ struct Connection {
     timeout: Duration,
 }
 
+fn normalize_address(address: &str) -> Result<String> {
+    let address = address.trim();
+    ensure!(
+        !address.is_empty() && !address.contains(char::is_whitespace),
+        "invalid MPD address"
+    );
+    if address.parse::<SocketAddr>().is_ok() {
+        return Ok(address.to_string());
+    }
+    if address.parse::<Ipv6Addr>().is_ok() {
+        return Ok(format!("[{address}]:{DEFAULT_PORT}"));
+    }
+    if let Some(inner) = address
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        ensure!(
+            inner.parse::<Ipv6Addr>().is_ok(),
+            "invalid MPD IPv6 address"
+        );
+        return Ok(format!("{address}:{DEFAULT_PORT}"));
+    }
+    if let Some((host, port)) = address.rsplit_once(':') {
+        ensure!(
+            !host.is_empty() && !port.is_empty() && port.parse::<u16>().is_ok(),
+            "MPD address must be host or host:port"
+        );
+        return Ok(address.to_string());
+    }
+    Ok(format!("{address}:{DEFAULT_PORT}"))
+}
+
 impl Connection {
     async fn connect(options: &Options) -> Result<Self> {
-        ensure!(
-            !options.address.is_empty() && !options.address.contains(char::is_whitespace),
-            "invalid MPD address"
-        );
-        let stream = timeout(options.timeout, TcpStream::connect(&options.address))
+        let address = normalize_address(&options.address)?;
+        let stream = timeout(options.timeout, TcpStream::connect(&address))
             .await
-            .map_err(|_| eyre!("MPD connection timed out"))?
-            .map_err(|_| eyre!("MPD connection failed"))?;
+            .map_err(|_| eyre!("MPD connection to {address} timed out"))?
+            .map_err(|error| {
+                let hint = if address.starts_with("0.0.0.0:") || address.starts_with("[::]:") {
+                    " (0.0.0.0 is MPD's bind address, not a remote host; use its name or LAN IP)"
+                } else {
+                    ""
+                };
+                eyre!("MPD connection to {address} failed: {error}{hint}")
+            })?;
         stream.set_nodelay(true)?;
         let (read, write) = stream.into_split();
         let mut connection = Self {
@@ -938,6 +976,22 @@ mod tests {
         assert_eq!(quote("a b"), "\"a b\"");
         assert_eq!(quote("a\"b"), "\"a\\\"b\"");
         assert_eq!(quote("a\\b"), "\"a\\\\b\"");
+    }
+
+    #[test]
+    fn mpd_addresses_default_to_port_6600_and_support_ipv6() {
+        assert_eq!(
+            normalize_address("audiomaster").unwrap(),
+            "audiomaster:6600"
+        );
+        assert_eq!(normalize_address("0.0.0.0").unwrap(), "0.0.0.0:6600");
+        assert_eq!(normalize_address(" 0.0.0.0 ").unwrap(), "0.0.0.0:6600");
+        assert_eq!(normalize_address("0.0.0.0:6601").unwrap(), "0.0.0.0:6601");
+        assert_eq!(normalize_address("::1").unwrap(), "[::1]:6600");
+        assert_eq!(normalize_address("[::1]").unwrap(), "[::1]:6600");
+        assert_eq!(normalize_address("[::1]:6601").unwrap(), "[::1]:6601");
+        assert!(normalize_address("host:not-a-port").is_err());
+        assert!(normalize_address("").is_err());
     }
 
     #[test]

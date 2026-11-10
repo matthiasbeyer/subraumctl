@@ -97,6 +97,11 @@ by subraumctl.
 | `--mpd-password` | `SUBRAUMCTL_MPD_PASSWORD` | none |
 | `--mpd-timeout` | `SUBRAUMCTL_MPD_TIMEOUT` | `3` seconds (1–30) |
 
+`--mpd-address` accepts `host` or `host:port`; a missing port defaults to
+`6600`. `0.0.0.0` is MPD's listen/bind address, not a generally reachable
+destination. Use `audiomaster`, `127.0.0.1` when the TUI runs on the MPD host,
+or the MPD host's LAN IP/hostname from another machine.
+
 Each operation opens one TCP connection, reads the `OK MPD` greeting, sends
 `password "..."` when configured, then executes one or more commands. Replies
 end with `OK`; `ACK` errors fail the operation. Commands and arguments are

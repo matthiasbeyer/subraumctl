@@ -130,7 +130,7 @@ pub struct GlobalArgs {
     )]
     pub pizzamat_timeout: u64,
 
-    /// MPD server address for music control
+    /// MPD server address (host or host:port; port defaults to 6600)
     #[arg(
         long,
         global = true,
