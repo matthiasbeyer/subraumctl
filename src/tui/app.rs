@@ -1005,11 +1005,19 @@ impl App {
                 }
             }
             // Mouse interaction is not implemented for these sections yet.
-            Section::Pizzamat | Section::Heizung | Section::Climate | Section::Power => {}
+            Section::Pizzamat
+            | Section::Heizung
+            | Section::Climate
+            | Section::Power
+            | Section::Audio
+            | Section::Music => {}
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if key.kind == KeyEventKind::Release {
+            return;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         // Free-form food and names must accept q/Q and all global shortcuts.
         // Ctrl+C still exits; Escape cancels the current form.
@@ -3002,6 +3010,7 @@ mod tests {
             influx: crate::influx::Options::default(),
             graph_minutes: 60,
             graph_layout: crate::cli::GraphLayout::Table,
+            music: crate::music::Options::default(),
             verbose: 0,
             dry_run: true,
         };
@@ -3186,6 +3195,7 @@ mod tests {
             influx: crate::influx::Options::default(),
             graph_minutes: 60,
             graph_layout: crate::cli::GraphLayout::Table,
+            music: crate::music::Options::default(),
             verbose: 0,
             dry_run: true,
         };
