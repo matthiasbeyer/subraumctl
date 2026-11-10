@@ -336,11 +336,6 @@ pub static STATIONS: &[Station] = &[
         uri: "http://listen.trancebase.fm/aacplus.pls",
     },
     Station {
-        id: "teatime",
-        name: "TeaTime.FM",
-        uri: "http://listen.teatime.fm/aacplus.pls",
-    },
-    Station {
         id: "equinoxe",
         name: "Radio Equinoxe",
         uri: "http://195.154.185.139/radio/39218/stream/76118",
