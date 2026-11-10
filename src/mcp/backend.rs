@@ -42,6 +42,11 @@ pub(super) trait Backend: Send + Sync + 'static {
         request: crate::pizzamat::Request,
         context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<Value>> + Send;
+    fn music(
+        &self,
+        request: crate::music::Request,
+        context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn send(
         &self,
         command: ControlCommand,
@@ -60,6 +65,7 @@ pub(super) struct DeviceBackend {
     heizung: crate::heizung::Options,
     influx: crate::influx::Options,
     pizzamat: crate::pizzamat::Options,
+    music: crate::music::Options,
     http: reqwest::Client,
     dry_run: bool,
     wait: Duration,
@@ -84,6 +90,7 @@ impl DeviceBackend {
             heizung: crate::heizung::Options::from_global(global),
             influx: crate::influx::Options::from_global(global),
             pizzamat: crate::pizzamat::Options::from_global(global),
+            music: crate::music::Options::from_global(global),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()?,
@@ -186,6 +193,23 @@ impl Backend for DeviceBackend {
         // Finish the bounded exchange and close its private reply queue even if
         // the caller cancels after submission. Never replay order mutations.
         crate::pizzamat::transport::execute(&self.pizzamat, &request, self.dry_run).await
+    }
+
+    async fn music(
+        &self,
+        request: crate::music::Request,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        // MPD operations are bounded commands; finish the exchange before the
+        // caller can observe cancellation, never replay a mutation.
+        crate::music::execute(&self.music, &request, self.dry_run)
+            .await
+            .map(|outcome| outcome.json())
     }
 
     async fn snapshot(

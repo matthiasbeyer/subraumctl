@@ -181,6 +181,7 @@ mod tests {
                 influx: Options::default(),
                 graph_minutes: 60,
                 graph_layout: crate::cli::GraphLayout::Table,
+                music: crate::music::Options::default(),
                 verbose: 0,
                 dry_run: false,
             },
@@ -254,7 +255,7 @@ mod tests {
         press(&mut app, KeyCode::Char('q'));
         app.zone = FocusZone::Sidebar;
         press(&mut app, KeyCode::End);
-        assert_eq!(app.section, Section::Power);
+        assert_eq!(app.section, Section::Music);
     }
 
     #[test]

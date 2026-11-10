@@ -36,6 +36,7 @@ fn app() -> (
                     amqp_url: "invalid://PRIVATE".into(),
                     timeout: Duration::from_secs(1),
                 },
+                music: crate::music::Options::default(),
                 verbose: 0,
                 dry_run: false,
             },
@@ -315,6 +316,8 @@ fn global_shortcuts_sidebar_and_status_rendering_remain_consistent() {
     assert_eq!(app.section, Section::Overview);
     app.zone = FocusZone::Sidebar;
     press(&mut app, KeyCode::End);
+    assert_eq!(app.section, Section::Music);
+    press(&mut app, KeyCode::Up);
     assert_eq!(app.section, Section::Power);
     press(&mut app, KeyCode::Up);
     assert_eq!(app.section, Section::Climate);

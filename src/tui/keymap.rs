@@ -363,6 +363,29 @@ const CONTENT_HEIZUNG: &[KeyBinding] = &[
     },
 ];
 
+const CONTENT_MUSIC: &[KeyBinding] = &[
+    KeyBinding {
+        keys: "↑ ↓",
+        action: "control/station",
+    },
+    KeyBinding {
+        keys: "Enter",
+        action: "activate",
+    },
+    KeyBinding {
+        keys: "Space",
+        action: "play/pause",
+    },
+    KeyBinding {
+        keys: "n p",
+        action: "next/previous",
+    },
+    KeyBinding {
+        keys: "PgUp PgDn",
+        action: "jump",
+    },
+];
+
 const TRAFFIC: &[KeyBinding] = &[
     KeyBinding {
         keys: "↑ ↓",
@@ -428,6 +451,7 @@ pub fn section_bindings(section: Section) -> &'static [KeyBinding] {
         Section::Heizung => CONTENT_HEIZUNG,
         Section::Climate => CONTENT_CLIMATE,
         Section::Power => CONTENT_POWER,
+        Section::Music => CONTENT_MUSIC,
         Section::Pizzamat => &[
             KeyBinding {
                 keys: "↑ ↓",

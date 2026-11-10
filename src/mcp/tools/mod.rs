@@ -6,6 +6,7 @@ mod controls;
 mod heizung;
 mod history;
 mod lighting;
+mod music;
 mod opt_in;
 mod pizzamat;
 mod power;
@@ -106,6 +107,7 @@ pub(super) fn register<B: super::backend::Backend>(
     climate::register(server, backend.clone())?;
     power::register(server, backend.clone())?;
     history::register(server, backend.clone())?;
+    music::register(server, backend.clone())?;
     pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(

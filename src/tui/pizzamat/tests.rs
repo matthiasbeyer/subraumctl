@@ -34,6 +34,7 @@ fn app() -> (App, UnboundedReceiver<Request>) {
                     amqp_url: "invalid://unused".into(),
                     timeout: std::time::Duration::from_secs(1),
                 },
+                music: crate::music::Options::default(),
                 verbose: 0,
                 dry_run: true,
             },

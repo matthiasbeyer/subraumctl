@@ -22,6 +22,7 @@ pub mod logging;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod mqtt;
+pub mod music;
 pub mod output;
 pub mod pizzamat;
 pub mod power;

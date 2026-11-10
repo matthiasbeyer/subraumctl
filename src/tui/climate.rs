@@ -191,6 +191,7 @@ mod tests {
                 influx: Options::default(),
                 graph_minutes: 60,
                 graph_layout: crate::cli::GraphLayout::Table,
+                music: crate::music::Options::default(),
                 verbose: 0,
                 dry_run: false,
             },

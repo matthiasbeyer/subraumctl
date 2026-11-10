@@ -132,6 +132,7 @@ fn app(connect: bool) -> (App, UnboundedReceiver<Request>) {
             influx: Options::default(),
             graph_minutes: 1,
             graph_layout: GraphLayout::Overlay,
+            music: crate::music::Options::default(),
             verbose: 0,
             dry_run: false,
         },
