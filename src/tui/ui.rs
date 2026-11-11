@@ -478,6 +478,18 @@ fn draw_text_input(frame: &mut Frame, area: Rect, app: &App) {
         TextInputMode::ExactWarm { input } => ("Warm white value (0..255)".to_string(), input),
         TextInputMode::ExactCold { input } => ("Cold white value (0..255)".to_string(), input),
         TextInputMode::ExactLaser { input } => ("Laser power (0..255)".to_string(), input),
+        TextInputMode::ExactAudioVolume { room, input } => (
+            format!(
+                "Set {} volume (0..{}%)",
+                crate::action::AudioRoom::ALL[*room].as_str(),
+                if app.audio.raise_maximum_volume {
+                    200
+                } else {
+                    100
+                }
+            ),
+            input,
+        ),
     };
 
     let popup_area = centered_rect(55, 30, area);

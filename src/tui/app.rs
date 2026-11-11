@@ -15,9 +15,10 @@ use tui_input::backend::crossterm::EventHandler;
 use tui_logger::TuiWidgetState;
 
 use crate::action::{
-    Action, ControlCommand, DmxAnimation, DmxGroup, Outlet, RadiationTarget, SmoothieRelay,
-    SobSound, TOPIC_ALERT_CONDITION, TOPIC_KNOB_GET_PREFIX, TOPIC_KNOB_SET_PREFIX,
-    TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX, Transport,
+    Action, AudioRoom, ControlCommand, DmxAnimation, DmxGroup, Outlet, RadiationTarget,
+    SmoothieRelay, SobSound, TOPIC_ALERT_CONDITION, TOPIC_AUDIO_ATTACH, TOPIC_AUDIO_DETACH,
+    TOPIC_AUDIO_MUTE, TOPIC_AUDIO_UNMUTE, TOPIC_AUDIO_VOLUME, TOPIC_KNOB_GET_PREFIX,
+    TOPIC_KNOB_SET_PREFIX, TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX, Transport,
 };
 use crate::cli::TuiView;
 use crate::color::{Theme, ThemePreset, ThemeRole};
@@ -41,6 +42,7 @@ pub enum Section {
     System,
     Animation,
     Smoothie,
+    Audio,
     Theme,
     Pizzamat,
     Heizung,
@@ -50,7 +52,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -59,6 +61,7 @@ impl Section {
         Self::System,
         Self::Animation,
         Self::Smoothie,
+        Self::Audio,
         Self::Theme,
         Self::Pizzamat,
         Self::Heizung,
@@ -77,12 +80,13 @@ impl Section {
             Self::System => 5,
             Self::Animation => 6,
             Self::Smoothie => 7,
-            Self::Theme => 8,
-            Self::Pizzamat => 9,
-            Self::Heizung => 10,
-            Self::Climate => 11,
-            Self::Power => 12,
-            Self::Music => 13,
+            Self::Audio => 8,
+            Self::Theme => 9,
+            Self::Pizzamat => 10,
+            Self::Heizung => 11,
+            Self::Climate => 12,
+            Self::Power => 13,
+            Self::Music => 14,
         }
     }
 
@@ -100,6 +104,7 @@ impl Section {
             Self::System => "System",
             Self::Animation => "Animation",
             Self::Smoothie => "Smoothiesaur",
+            Self::Audio => "Audio",
             Self::Theme => "Theme",
             Self::Pizzamat => "Pizzamat",
             Self::Heizung => "Heizung",
@@ -127,6 +132,7 @@ impl Section {
             TuiView::System => Self::System,
             TuiView::Animation => Self::Animation,
             TuiView::Smoothie => Self::Smoothie,
+            TuiView::Audio => Self::Audio,
             TuiView::Theme => Self::Theme,
             TuiView::Pizzamat => Self::Pizzamat,
             TuiView::Heizung => Self::Heizung,
@@ -270,6 +276,14 @@ pub struct SmoothieState {
     pub http_error: Option<String>,
 }
 
+pub struct AudioState {
+    pub focus: usize,
+    pub volumes: [u8; 4],
+    pub raise_maximum_volume: bool,
+    pub muted: [bool; 4],
+    pub detached: [bool; 4],
+}
+
 #[derive(Default)]
 pub struct ThemeViewState {
     pub focus: usize,
@@ -300,6 +314,10 @@ pub enum TextInputMode {
         input: Input,
     },
     ExactLaser {
+        input: Input,
+    },
+    ExactAudioVolume {
+        room: usize,
         input: Input,
     },
 }
@@ -348,6 +366,7 @@ pub struct App {
     pub system: SystemState,
     pub animation: AnimationState,
     pub smoothie: SmoothieState,
+    pub audio: AudioState,
     pub theme_view: ThemeViewState,
     pub text_input: Option<TextInputState>,
     #[cfg(feature = "tui-mouse")]
@@ -444,6 +463,13 @@ impl App {
                 status: SmoothieStatus::default(),
                 last_http: None,
                 http_error: None,
+            },
+            audio: AudioState {
+                focus: 0,
+                volumes: [100; 4],
+                raise_maximum_volume: false,
+                muted: [false; 4],
+                detached: [false; 4],
             },
             theme_view: ThemeViewState::default(),
             text_input: None,
@@ -979,7 +1005,12 @@ impl App {
                 }
             }
             // Mouse interaction is not implemented for these sections yet.
-            Section::Pizzamat | Section::Heizung | Section::Climate | Section::Power => {}
+            Section::Pizzamat
+            | Section::Heizung
+            | Section::Climate
+            | Section::Power
+            | Section::Audio
+            | Section::Music => {}
         }
     }
 
@@ -987,7 +1018,6 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return;
         }
-
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         // Free-form food and names must accept q/Q and all global shortcuts.
         // Ctrl+C still exits; Escape cancels the current form.
@@ -1058,15 +1088,21 @@ impl App {
             return;
         }
 
-        // In the white-light view, w/c focus the warm/cold sliders. `c` would
-        // otherwise be captured by the global connect shortcut.
-        if self.zone == FocusZone::Content && self.section == Section::WhiteLight {
-            match key.code {
-                KeyCode::Char('w') => {
+        if self.zone == FocusZone::Content
+            && self.section == Section::Audio
+            && self.audio.focus % 4 >= 2
+            && matches!(key.code, KeyCode::Char('a' | 'd'))
+        {
+            self.handle_audio_key(key);
+            return;
+        }
+        if self.zone == FocusZone::Content {
+            match (self.section, key.code) {
+                (Section::WhiteLight, KeyCode::Char('w')) => {
                     self.white_light.focus = 0;
                     return;
                 }
-                KeyCode::Char('c') => {
+                (Section::WhiteLight, KeyCode::Char('c')) => {
                     self.white_light.focus = 1;
                     return;
                 }
@@ -1074,7 +1110,8 @@ impl App {
             }
         }
 
-        // These actions are available from every focus zone.
+        // These actions are available from every focus zone, except where a
+        // view-specific shortcut above has already handled the key.
         match key.code {
             KeyCode::Char('?') => {
                 self.popup = Some(Popup::Help { scroll: 0 });
@@ -1436,6 +1473,34 @@ impl App {
                     self.text_input = Some(state);
                 }
             },
+            TextInputMode::ExactAudioVolume { room, input } => match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Enter => match input.value().trim().parse::<u8>() {
+                    Ok(value) if value <= 200 => {
+                        let room_index = *room;
+                        let room = AudioRoom::ALL[room_index];
+                        if !self.audio.raise_maximum_volume && value > 100 {
+                            self.set_status(
+                                "enable 'raise maximum volume' to enter values above 100%",
+                                StatusKind::Error,
+                            );
+                            self.text_input = Some(state);
+                            return;
+                        }
+                        self.audio.volumes[room_index] = value;
+                        self.text_input = None;
+                        self.request_command(ControlCommand::AudioVolume {
+                            room,
+                            percent: value,
+                        });
+                    }
+                    _ => self.set_status("volume must be between 0 and 200", StatusKind::Error),
+                },
+                _ => {
+                    input.handle_event(&Event::Key(key));
+                    self.text_input = Some(state);
+                }
+            },
         }
     }
 
@@ -1534,6 +1599,7 @@ impl App {
             Section::System => self.handle_system_key(key),
             Section::Animation => self.handle_animation_key(key),
             Section::Smoothie => self.handle_smoothie_key(key),
+            Section::Audio => self.handle_audio_key(key),
             Section::Theme => self.handle_theme_key(key),
             Section::Pizzamat => self.handle_pizzamat_key(key),
             Section::Heizung => self.handle_heizung_key(key),
@@ -1938,6 +2004,150 @@ impl App {
         }
     }
 
+    fn audio_volume_max(&self) -> u8 {
+        if self.audio.raise_maximum_volume {
+            200
+        } else {
+            100
+        }
+    }
+
+    fn toggle_audio_maximum(&mut self) {
+        self.audio.raise_maximum_volume = !self.audio.raise_maximum_volume;
+        if !self.audio.raise_maximum_volume {
+            let clamped_rooms: Vec<_> = self
+                .audio
+                .volumes
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(index, volume)| {
+                    if *volume > 100 {
+                        *volume = 100;
+                        Some(AudioRoom::ALL[index])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for room in clamped_rooms {
+                self.request_command(ControlCommand::AudioVolume { room, percent: 100 });
+            }
+        }
+    }
+
+    fn adjust_audio_volume_up(&mut self, room: usize) {
+        self.audio.volumes[room] = self.audio.volumes[room]
+            .saturating_add(1)
+            .min(self.audio_volume_max());
+    }
+
+    fn handle_audio_key(&mut self, key: KeyEvent) {
+        let toggle_index = AudioRoom::ALL.len() * 4;
+        match key.code {
+            KeyCode::Up => {
+                self.audio.focus = self.audio.focus.checked_sub(1).unwrap_or(toggle_index);
+            }
+            KeyCode::Down => self.audio.focus = (self.audio.focus + 1) % (toggle_index + 1),
+            KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') | KeyCode::Enter
+                if self.audio.focus == toggle_index =>
+            {
+                self.toggle_audio_maximum();
+            }
+            KeyCode::Left if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) => {
+                let room = self.audio.focus / 4;
+                self.audio.volumes[room] = self.audio.volumes[room].saturating_sub(1);
+            }
+            KeyCode::Right if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) => {
+                let room = self.audio.focus / 4;
+                self.adjust_audio_volume_up(room);
+            }
+            KeyCode::Home if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) => {
+                let room = self.audio.focus / 4;
+                self.audio.volumes[room] = 0;
+            }
+            KeyCode::End if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) => {
+                let room = self.audio.focus / 4;
+                self.audio.volumes[room] = self.audio_volume_max();
+            }
+            KeyCode::Char(' ') | KeyCode::Enter
+                if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) =>
+            {
+                let room_index = self.audio.focus / 4;
+                self.request_command(ControlCommand::AudioVolume {
+                    room: AudioRoom::ALL[room_index],
+                    percent: self.audio.volumes[room_index],
+                });
+            }
+            KeyCode::Char(' ') | KeyCode::Enter if self.audio.focus < 16 => {
+                let room_index = self.audio.focus / 4;
+                let control = self.audio.focus % 4;
+                let room = AudioRoom::ALL[room_index];
+                match control {
+                    0 => self.request_command(ControlCommand::AudioVolume {
+                        room,
+                        percent: self.audio.volumes[room_index],
+                    }),
+                    1 => {
+                        let muted = !self.audio.muted[room_index];
+                        self.request_command(ControlCommand::AudioMute { room, muted });
+                    }
+                    2 | 3 => {
+                        let detached = control == 3;
+                        if self.audio.detached[room_index] != detached {
+                            self.request_command(ControlCommand::AudioDetach { room, detached });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Char('a') if self.audio.focus < 16 => {
+                let index = self.audio.focus / 4;
+                if self.audio.detached[index] {
+                    self.audio.detached[index] = false;
+                    self.request_command(ControlCommand::AudioDetach {
+                        room: AudioRoom::ALL[index],
+                        detached: false,
+                    });
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') if self.audio.focus < 16 => {
+                let index = self.audio.focus / 4;
+                if !self.audio.detached[index] {
+                    self.audio.detached[index] = true;
+                    self.request_command(ControlCommand::AudioDetach {
+                        room: AudioRoom::ALL[index],
+                        detached: true,
+                    });
+                }
+            }
+            KeyCode::Char('+') | KeyCode::Char('=')
+                if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) =>
+            {
+                let index = self.audio.focus / 4;
+                self.adjust_audio_volume_up(index);
+            }
+            KeyCode::Char('-') if self.audio.focus < 16 && self.audio.focus.is_multiple_of(4) => {
+                let index = self.audio.focus / 4;
+                self.audio.volumes[index] = self.audio.volumes[index].saturating_sub(1);
+            }
+            KeyCode::Char(ch)
+                if ch.is_ascii_digit()
+                    && self.audio.focus < 16
+                    && self.audio.focus.is_multiple_of(4) =>
+            {
+                let mut input = Input::default();
+                input.handle_event(&Event::Key(key));
+                self.text_input = Some(TextInputState {
+                    mode: TextInputMode::ExactAudioVolume {
+                        room: self.audio.focus / 4,
+                        input,
+                    },
+                });
+            }
+            _ => {}
+        }
+    }
+
     fn handle_theme_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up => {
@@ -2291,6 +2501,61 @@ impl App {
         self.send_actions(actions);
     }
 
+    fn apply_audio_action_state(&mut self, action: &Action) {
+        let Action::Publish { topic, payload, .. } = action else {
+            return;
+        };
+        let is_audio_topic = matches!(
+            topic.as_str(),
+            TOPIC_AUDIO_MUTE
+                | TOPIC_AUDIO_UNMUTE
+                | TOPIC_AUDIO_DETACH
+                | TOPIC_AUDIO_ATTACH
+                | TOPIC_AUDIO_VOLUME
+        );
+        if !is_audio_topic {
+            return;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+            return;
+        };
+        let Some(args) = value.get("args").and_then(serde_json::Value::as_str) else {
+            return;
+        };
+        let Some(room_name) = args.split_whitespace().next() else {
+            return;
+        };
+        let Some(room) = AudioRoom::ALL
+            .into_iter()
+            .find(|room| room.as_str() == room_name)
+        else {
+            return;
+        };
+        let index = room.index();
+        match topic.as_str() {
+            TOPIC_AUDIO_MUTE => self.audio.muted[index] = true,
+            TOPIC_AUDIO_UNMUTE => self.audio.muted[index] = false,
+            TOPIC_AUDIO_DETACH => self.audio.detached[index] = true,
+            TOPIC_AUDIO_ATTACH => self.audio.detached[index] = false,
+            TOPIC_AUDIO_VOLUME => {
+                if let Some(percent) = args
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|value| value.strip_suffix('%'))
+                    .and_then(|value| value.parse::<u8>().ok())
+                    .filter(|value| *value <= 200)
+                {
+                    self.audio.volumes[index] = if self.audio.raise_maximum_volume {
+                        percent
+                    } else {
+                        percent.min(100)
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn send_actions(&mut self, actions: Vec<Action>) {
         if actions.is_empty() {
             return;
@@ -2298,6 +2563,7 @@ impl App {
         let count = actions.len();
         if self.options.dry_run {
             for action in &actions {
+                self.apply_audio_action_state(action);
                 self.traffic.push(TrafficEntry::from_action(
                     action,
                     TrafficDirection::Dry,
@@ -2309,6 +2575,7 @@ impl App {
         }
 
         for action in actions {
+            self.apply_audio_action_state(&action);
             match action {
                 Action::Publish {
                     topic,
@@ -2724,6 +2991,171 @@ fn outlet_from_payload(payload: &str) -> Option<(usize, bool)> {
 mod tests {
     use super::*;
 
+    fn audio_test_app() -> App {
+        let (mqtt_tx, _mqtt_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (http_tx, _http_rx) = tokio::sync::mpsc::unbounded_channel();
+        let options = TuiOptions {
+            mqtt: crate::mqtt::MqttOptions::new("tcp://localhost:1883"),
+            view: TuiView::Audio,
+            connect: false,
+            safe_mode: false,
+            theme: Theme::preset(ThemePreset::Dark),
+            theme_preset: ThemePreset::Dark,
+            smoothie_url: String::new(),
+            pizzamat: crate::pizzamat::Options::default(),
+            heizung: crate::heizung::Options {
+                amqp_url: "invalid://PRIVATE".to_string(),
+                timeout: std::time::Duration::from_secs(1),
+            },
+            influx: crate::influx::Options::default(),
+            graph_minutes: 60,
+            graph_layout: crate::cli::GraphLayout::Table,
+            music: crate::music::Options::default(),
+            verbose: 0,
+            dry_run: true,
+        };
+        let (pizza_tx, _pizza_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (heizung_tx, _heizung_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (climate_tx, _climate_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (power_tx, _power_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            options, mqtt_tx, http_tx, pizza_tx, heizung_tx, climate_tx, power_tx,
+        );
+        app.connection = ConnectionState::Connected {
+            since: Instant::now(),
+        };
+        app
+    }
+
+    #[test]
+    fn audio_mixer_defaults_to_full_volume_and_has_four_room_strips() {
+        let app = audio_test_app();
+        assert_eq!(app.audio.volumes, [100; 4]);
+        assert!(!app.audio.raise_maximum_volume);
+
+        assert_eq!(app.audio.muted, [false; 4]);
+        assert_eq!(app.audio.detached, [false; 4]);
+        assert_eq!(AudioRoom::ALL.len(), 4);
+    }
+
+    #[test]
+    fn audio_attach_detach_shortcuts_target_the_focused_room() {
+        let mut app = audio_test_app();
+        app.audio.focus = AudioRoom::Elab.index() * 4 + 2;
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        assert!(app.audio.detached[AudioRoom::Elab.index()]);
+        assert!(app.connection.is_connected());
+        let entries = app.traffic.filtered(Section::Audio);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].target, crate::action::TOPIC_AUDIO_DETACH);
+        assert_eq!(entries[0].payload, r#"{"args":"elab","user":"subraumctl"}"#);
+
+        app.audio.focus = AudioRoom::Hack.index() * 4 + 3;
+        app.audio.detached[AudioRoom::Hack.index()] = true;
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(!app.audio.detached[AudioRoom::Hack.index()]);
+        assert!(app.connection.is_connected());
+        let entries = app.traffic.filtered(Section::Audio);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].target, crate::action::TOPIC_AUDIO_ATTACH);
+        assert_eq!(entries[1].payload, r#"{"args":"hack","user":"subraumctl"}"#);
+    }
+
+    #[test]
+    fn attach_shortcut_does_not_disconnect_when_audio_control_is_focused() {
+        let mut app = audio_test_app();
+        app.audio.focus = AudioRoom::Hack.index() * 4 + 2;
+        app.audio.detached[AudioRoom::Hack.index()] = true;
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(app.connection.is_connected());
+        assert!(!app.audio.detached[AudioRoom::Hack.index()]);
+        assert_eq!(app.traffic.len(), 1);
+        assert_eq!(
+            app.traffic.filtered(Section::Audio)[0].target,
+            crate::action::TOPIC_AUDIO_ATTACH
+        );
+    }
+
+    #[test]
+    fn audio_exact_volume_applies_and_sends_to_selected_room() {
+        let mut app = audio_test_app();
+        app.audio.raise_maximum_volume = true;
+        app.audio.focus = AudioRoom::Cook.index() * 4;
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('0'), KeyModifiers::NONE));
+        assert!(matches!(
+            app.text_input.as_ref().map(|input| &input.mode),
+            Some(TextInputMode::ExactAudioVolume { room: 2, .. })
+        ));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(app.audio.volumes[AudioRoom::Cook.index()], 150);
+        let entries = app.traffic.filtered(Section::Audio);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].target, crate::action::TOPIC_AUDIO_VOLUME);
+        assert_eq!(
+            entries[0].payload,
+            r#"{"args":"cook 150%","user":"subraumctl"}"#
+        );
+    }
+
+    #[test]
+    fn disabling_raised_maximum_clamps_all_rooms_back_to_100() {
+        let mut app = audio_test_app();
+        app.audio.raise_maximum_volume = true;
+        app.audio.volumes = [150, 100, 200, 99];
+        app.audio.focus = AudioRoom::ALL.len() * 4;
+
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(app.audio.volumes, [100, 100, 100, 99]);
+        assert!(!app.audio.raise_maximum_volume);
+        let entries = app.traffic.filtered(Section::Audio);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].payload,
+            r#"{"args":"hack 100%","user":"subraumctl"}"#
+        );
+        assert_eq!(
+            entries[1].payload,
+            r#"{"args":"cook 100%","user":"subraumctl"}"#
+        );
+    }
+
+    #[test]
+    fn audio_volume_stays_at_100_by_default_and_raises_globally_when_enabled() {
+        let mut app = audio_test_app();
+        let room = AudioRoom::Hack.index();
+        app.audio.focus = room * 4;
+        app.audio.volumes[room] = 99;
+
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.audio.volumes[room], 100);
+        assert!(!app.audio.raise_maximum_volume);
+        assert_eq!(app.traffic.filtered(Section::Audio).len(), 0);
+
+        app.audio.focus = AudioRoom::ALL.len() * 4;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.audio.raise_maximum_volume);
+        app.audio.focus = room * 4;
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.audio.volumes[room], 101);
+        app.audio.focus = AudioRoom::ALL.len() * 4;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(!app.audio.raise_maximum_volume);
+        assert_eq!(app.audio.volumes[room], 100);
+
+        app.audio.focus = room * 4;
+        app.audio.volumes[room] = 100;
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.audio.volumes[room], 100);
+    }
+
     #[test]
     fn section_bits_are_unique() {
         let mut seen = 0u16;
@@ -2763,6 +3195,7 @@ mod tests {
             influx: crate::influx::Options::default(),
             graph_minutes: 60,
             graph_layout: crate::cli::GraphLayout::Table,
+            music: crate::music::Options::default(),
             verbose: 0,
             dry_run: true,
         };

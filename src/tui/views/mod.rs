@@ -10,6 +10,7 @@ use crate::color::Theme;
 
 pub mod alerts;
 pub mod animation;
+pub mod audio;
 pub mod climate;
 pub mod heizung;
 pub mod lighting;
@@ -30,6 +31,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         Section::WhiteLight => white_light::draw(frame, area, app),
         Section::Outlets => outlets::draw(frame, area, app),
         Section::Alerts => alerts::draw(frame, area, app),
+        Section::Audio => audio::draw(frame, area, app),
         Section::System => system::draw(frame, area, app),
         Section::Animation => animation::draw(frame, area, app),
         Section::Smoothie => smoothie::draw(frame, area, app),

@@ -696,6 +696,8 @@ pub enum TuiView {
     Animation,
     #[value(name = "smoothiesaur", alias = "smoothie")]
     Smoothie,
+    #[value(name = "audio")]
+    Audio,
     #[value(name = "theme")]
     Theme,
     #[value(name = "pizzamat", alias = "pizza")]

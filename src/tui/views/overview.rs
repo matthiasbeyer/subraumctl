@@ -139,6 +139,7 @@ fn description(section: Section) -> &'static str {
         Section::System => "telinit",
         Section::Animation => "animation knobs",
         Section::Smoothie => "relays, laser and coolant status",
+        Section::Audio => "room mute, volume and audio routing",
         Section::Theme => "TUI colors and palette",
         Section::Pizzamat => "shared food orders and delivery services",
         Section::Heizung => "per-room heating targets and timers",
