@@ -32,6 +32,8 @@ fn app() -> (
                 influx: crate::influx::Options::default(),
                 soundboard: crate::soundboard::Options::default(),
                 graph_minutes: 60,
+                #[cfg(feature = "strichliste")]
+                strichliste: crate::strichliste::Options::default(),
                 graph_layout: crate::cli::GraphLayout::Table,
                 heizung: Options {
                     amqp_url: "invalid://PRIVATE".into(),
@@ -317,6 +319,11 @@ fn global_shortcuts_sidebar_and_status_rendering_remain_consistent() {
     assert_eq!(app.section, Section::Overview);
     app.zone = FocusZone::Sidebar;
     press(&mut app, KeyCode::End);
+    #[cfg(feature = "strichliste")]
+    {
+        assert_eq!(app.section, Section::Strichliste);
+        press(&mut app, KeyCode::Up);
+    }
     assert_eq!(app.section, Section::Soundboard);
     press(&mut app, KeyCode::Up);
     assert_eq!(app.section, Section::Music);

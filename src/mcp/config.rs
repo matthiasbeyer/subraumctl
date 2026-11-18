@@ -40,10 +40,11 @@ pub enum Group {
     Power,
     Pizzamat,
     Music,
+    Strichliste,
 }
 
 impl Group {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Dmx,
         Self::WhiteLight,
         Self::Outlet,
@@ -58,6 +59,7 @@ impl Group {
         Self::Power,
         Self::Pizzamat,
         Self::Music,
+        Self::Strichliste,
     ];
 
     pub fn name(self) -> &'static str {
@@ -76,6 +78,7 @@ impl Group {
             Self::Power => "power",
             Self::Pizzamat => "pizzamat",
             Self::Music => "music",
+            Self::Strichliste => "strichliste",
         }
     }
 
@@ -93,6 +96,7 @@ impl Group {
                     | Self::Power
                     | Self::Pizzamat
                     | Self::Music
+                    | Self::Strichliste
             ),
             Access::Write => !matches!(self, Self::Status | Self::Climate | Self::Power),
         }
@@ -101,7 +105,7 @@ impl Group {
     fn default_permission(self) -> Permission {
         match self {
             Self::Outlet | Self::Smoothiesaur | Self::Publish => Permission::Disabled,
-            Self::Status | Self::Climate | Self::Power => Permission::Read,
+            Self::Status | Self::Climate | Self::Power | Self::Strichliste => Permission::Read,
             _ => Permission::Write,
         }
     }
@@ -173,7 +177,9 @@ mod tests {
             for access in [Access::Read, Access::Write] {
                 assert_eq!(
                     config.allows(group, access),
-                    enabled && group.supports(access)
+                    enabled
+                        && group.supports(access)
+                        && !(group == Group::Strichliste && access == Access::Write)
                 );
             }
         }

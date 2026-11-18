@@ -290,6 +290,18 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let first = bindings_line(keymap::global_bindings(), &app.theme);
+    #[cfg(feature = "strichliste")]
+    let first = if app.section == Section::Strichliste && app.zone == FocusZone::Content {
+        let mut bindings = keymap::global_bindings().to_vec();
+        for binding in &mut bindings {
+            if binding.keys == "c/d/r" {
+                binding.keys = "c/d";
+            }
+        }
+        bindings_line(&bindings, &app.theme)
+    } else {
+        first
+    };
     let context = if app.zone == FocusZone::Content {
         keymap::section_bindings(app.section)
     } else {
@@ -392,6 +404,62 @@ fn draw_popups(frame: &mut Frame, area: Rect, app: &App) {
                 .map(|line| Line::from(line.to_string()))
                 .collect::<Vec<Line<'static>>>();
             render_popup(frame, area, "Message detail", lines, 72, 48, &app.theme);
+        }
+        #[cfg(feature = "strichliste")]
+        Popup::StrichlisteError { message } => {
+            let lines = vec![
+                Line::from(Span::styled(
+                    message.clone(),
+                    Style::default().fg(app.theme.error),
+                )),
+                Line::from(""),
+                Line::from("Enter / Esc: close"),
+            ];
+            render_popup(
+                frame,
+                area,
+                "Strichliste transaction error",
+                lines,
+                90,
+                60,
+                &app.theme,
+            );
+        }
+        #[cfg(feature = "strichliste")]
+        Popup::StrichlisteTransaction {
+            transaction,
+            scroll,
+        } => {
+            let popup_area = centered_rect(90, 75, area);
+            frame.render_widget(Clear, popup_area);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title("Transaction · Up/Down scroll · Enter/Esc close")
+                .border_style(Style::default().fg(app.theme.accent))
+                .style(
+                    Style::default()
+                        .bg(app.theme.background)
+                        .fg(app.theme.foreground),
+                );
+            let inner = block.inner(popup_area);
+            frame.render_widget(block, popup_area);
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "#{} · {}\nDate: {}\nAmount: {:+} EUR (full precision)\n\nComment: {}",
+                    transaction.id,
+                    transaction.kind(),
+                    transaction.created_at.escape_debug(),
+                    transaction.value_eur,
+                    transaction
+                        .comment
+                        .as_deref()
+                        .unwrap_or("(none)")
+                        .escape_debug(),
+                ))
+                .wrap(Wrap { trim: false })
+                .scroll((*scroll, 0)),
+                inner,
+            );
         }
         Popup::ColorPicker { picker } => {
             views::theme::draw_picker(frame, centered_rect(75, 80, area), picker, &app.theme);

@@ -66,7 +66,7 @@ pub struct TrafficEntry {
     pub target: String,
     pub payload: String,
     pub note: Option<String>,
-    pub sections: u16,
+    pub sections: u32,
 }
 
 impl TrafficEntry {
@@ -118,7 +118,7 @@ impl TrafficEntry {
         }
     }
 
-    pub fn error(target: &str, payload: &str, reason: &str, sections: u16) -> Self {
+    pub fn error(target: &str, payload: &str, reason: &str, sections: u32) -> Self {
         Self {
             at: now_hms(),
             direction: TrafficDirection::Error,
@@ -201,7 +201,7 @@ impl TrafficLog {
     }
 }
 
-pub fn sections_for_topic(topic: &str) -> u16 {
+pub fn sections_for_topic(topic: &str) -> u32 {
     let mut mask = Section::Overview.bit();
     if topic == TOPIC_DMX {
         mask |= Section::Lighting.bit();
@@ -234,7 +234,7 @@ pub fn sections_for_topic(topic: &str) -> u16 {
     mask
 }
 
-pub fn sections_for_action(action: &Action) -> u16 {
+pub fn sections_for_action(action: &Action) -> u32 {
     match action {
         Action::Publish { topic, .. } => sections_for_topic(topic),
         Action::Http { .. } => Section::Overview.bit() | Section::Smoothie.bit(),

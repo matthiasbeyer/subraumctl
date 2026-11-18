@@ -191,6 +191,8 @@ mod tests {
                 influx: Options::default(),
                 soundboard: crate::soundboard::Options::default(),
                 graph_minutes: 60,
+                #[cfg(feature = "strichliste")]
+                strichliste: crate::strichliste::Options::default(),
                 graph_layout: crate::cli::GraphLayout::Table,
                 music: crate::music::Options::default(),
                 verbose: 0,

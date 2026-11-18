@@ -30,6 +30,8 @@ pub enum PendingCommand {
     },
     Heizung(crate::heizung::Request),
     Soundboard(crate::soundboard::Request),
+    #[cfg(feature = "strichliste")]
+    Strichliste(super::strichliste::Command),
 }
 
 impl PendingCommand {
@@ -52,6 +54,8 @@ impl PendingCommand {
                     format!("AMQP cmd/{} {}", request.command(), request.args()),
                 ];
             }
+            #[cfg(feature = "strichliste")]
+            Self::Strichliste(command) => return command.preview_lines(),
         };
         let mut lines = vec![description.clone()];
         for action in actions.iter().take(max_actions) {

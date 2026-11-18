@@ -147,5 +147,7 @@ fn description(section: Section) -> &'static str {
         Section::Power => "meter power by phase and total",
         Section::Music => "MPD playback and radio stations",
         Section::Soundboard => "search and play EDI sound samples",
+        #[cfg(feature = "strichliste")]
+        Section::Strichliste => "balance, purchase rank, payments and transfers",
     }
 }

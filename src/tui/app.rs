@@ -50,10 +50,12 @@ pub enum Section {
     Power,
     Music,
     Soundboard,
+    #[cfg(feature = "strichliste")]
+    Strichliste,
 }
 
 impl Section {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 16 + cfg!(feature = "strichliste") as usize] = [
         Self::Overview,
         Self::Lighting,
         Self::WhiteLight,
@@ -70,6 +72,8 @@ impl Section {
         Self::Power,
         Self::Music,
         Self::Soundboard,
+        #[cfg(feature = "strichliste")]
+        Self::Strichliste,
     ];
 
     pub fn index(self) -> usize {
@@ -90,11 +94,13 @@ impl Section {
             Self::Power => 13,
             Self::Music => 14,
             Self::Soundboard => 15,
+            #[cfg(feature = "strichliste")]
+            Self::Strichliste => 16,
         }
     }
 
-    pub fn bit(self) -> u16 {
-        1u16 << self.index()
+    pub fn bit(self) -> u32 {
+        1u32 << self.index()
     }
 
     pub fn title(self) -> &'static str {
@@ -115,6 +121,8 @@ impl Section {
             Self::Power => "Power",
             Self::Music => "Music",
             Self::Soundboard => "Soundboard",
+            #[cfg(feature = "strichliste")]
+            Self::Strichliste => "Strichliste",
         }
     }
 
@@ -144,6 +152,8 @@ impl Section {
             TuiView::Power => Self::Power,
             TuiView::Music => Self::Music,
             TuiView::Soundboard => Self::Soundboard,
+            #[cfg(feature = "strichliste")]
+            TuiView::Strichliste => Self::Strichliste,
         }
     }
 }
@@ -204,6 +214,15 @@ impl ConnectionState {
 }
 
 pub enum Popup {
+    #[cfg(feature = "strichliste")]
+    StrichlisteTransaction {
+        transaction: crate::strichliste::Transaction,
+        scroll: u16,
+    },
+    #[cfg(feature = "strichliste")]
+    StrichlisteError {
+        message: String,
+    },
     Quit {
         selected: ConfirmChoice,
     },
@@ -346,6 +365,8 @@ pub struct App {
     pub music_tx: Option<UnboundedSender<crate::music::Request>>,
     pub music: super::music::State,
     pub soundboard: super::soundboard::State,
+    #[cfg(feature = "strichliste")]
+    pub strichliste: super::strichliste::State,
     pub graphs: super::graphs::Graphs,
     pub should_quit: bool,
     pub section: Section,
@@ -411,6 +432,8 @@ impl App {
             music_tx: None,
             music: super::music::State::default(),
             soundboard: super::soundboard::State::default(),
+            #[cfg(feature = "strichliste")]
+            strichliste: super::strichliste::State::default(),
             should_quit: false,
             section,
             zone: FocusZone::Content,
@@ -650,6 +673,8 @@ impl App {
                         PendingCommand::Device { actions, .. } => self.send_actions(actions),
                         PendingCommand::Heizung(request) => self.send_heizung(request),
                         PendingCommand::Soundboard(request) => self.send_soundboard(request),
+                        #[cfg(feature = "strichliste")]
+                        PendingCommand::Strichliste(request) => self.send_strichliste(request),
                     }
                 } else {
                     self.set_status("command cancelled", StatusKind::Info);
@@ -1025,6 +1050,8 @@ impl App {
             | Section::Audio
             | Section::Music => {}
             Section::Soundboard => self.handle_soundboard_click(mouse, area, double_click),
+            #[cfg(feature = "strichliste")]
+            Section::Strichliste => self.handle_strichliste_click(mouse, area, double_click),
         }
     }
 
@@ -1033,6 +1060,19 @@ impl App {
             return;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        #[cfg(feature = "strichliste")]
+        if self.popup.is_none()
+            && self.section == Section::Strichliste
+            && self.zone == FocusZone::Content
+            && self.strichliste.form.is_some()
+        {
+            if ctrl && matches!(key.code, KeyCode::Char('c' | 'C')) {
+                self.should_quit = true;
+            } else {
+                self.handle_strichliste_input(key);
+            }
+            return;
+        }
         if self.popup.is_none()
             && self.section == Section::Soundboard
             && self.zone == FocusZone::Content
@@ -1124,6 +1164,18 @@ impl App {
         }
         if self.zone == FocusZone::Content {
             match (self.section, key.code) {
+                #[cfg(feature = "strichliste")]
+                (Section::Strichliste, KeyCode::Char('r')) => {
+                    self.handle_strichliste_key(key);
+                    return;
+                }
+                #[cfg(feature = "strichliste")]
+                (Section::Strichliste, KeyCode::Esc | KeyCode::Char('q'))
+                    if self.strichliste.show_transactions =>
+                {
+                    self.handle_strichliste_key(key);
+                    return;
+                }
                 (Section::WhiteLight, KeyCode::Char('w')) => {
                     self.white_light.focus = 0;
                     return;
@@ -1268,6 +1320,8 @@ impl App {
                         PendingCommand::Device { actions, .. } => self.send_actions(actions),
                         PendingCommand::Heizung(request) => self.send_heizung(request),
                         PendingCommand::Soundboard(request) => self.send_soundboard(request),
+                        #[cfg(feature = "strichliste")]
+                        PendingCommand::Strichliste(request) => self.send_strichliste(request),
                     }
                 } else if matches!(key.code, KeyCode::Char('n') | KeyCode::Esc)
                     || (matches!(key.code, KeyCode::Enter) && !selected.is_confirm())
@@ -1300,6 +1354,32 @@ impl App {
             Popup::TrafficDetail { entry } => match key.code {
                 KeyCode::Esc | KeyCode::Enter => {}
                 _ => next = Some(Popup::TrafficDetail { entry }),
+            },
+            #[cfg(feature = "strichliste")]
+            Popup::StrichlisteError { message } => match key.code {
+                KeyCode::Esc | KeyCode::Enter => {}
+                _ => next = Some(Popup::StrichlisteError { message }),
+            },
+            #[cfg(feature = "strichliste")]
+            Popup::StrichlisteTransaction {
+                transaction,
+                mut scroll,
+            } => match key.code {
+                KeyCode::Esc | KeyCode::Enter => {}
+                _ => {
+                    match key.code {
+                        KeyCode::Up => scroll = scroll.saturating_sub(1),
+                        KeyCode::Down => scroll = scroll.saturating_add(1),
+                        KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                        KeyCode::PageDown => scroll = scroll.saturating_add(10),
+                        KeyCode::Home => scroll = 0,
+                        _ => {}
+                    }
+                    next = Some(Popup::StrichlisteTransaction {
+                        transaction,
+                        scroll,
+                    });
+                }
             },
             Popup::ColorPicker { mut picker } => match picker.handle_key(key) {
                 PickerOutcome::Changed => {
@@ -1634,6 +1714,8 @@ impl App {
             Section::Power => self.handle_power_key(key),
             Section::Music => self.handle_music_key(key),
             Section::Soundboard => self.handle_soundboard_key(key),
+            #[cfg(feature = "strichliste")]
+            Section::Strichliste => self.handle_strichliste_key(key),
         }
     }
 
@@ -2409,6 +2491,10 @@ impl App {
     }
 
     fn change_section(&mut self, section: Section) {
+        #[cfg(feature = "strichliste")]
+        if section != self.section {
+            self.strichliste.form = None;
+        }
         self.section = section;
         self.text_input = None;
         self.traffic_selected = None;
@@ -2422,6 +2508,8 @@ impl App {
         self.maybe_refresh_climate();
         self.maybe_refresh_power();
         self.maybe_refresh_music();
+        #[cfg(feature = "strichliste")]
+        self.maybe_refresh_strichliste();
     }
 
     fn go_back(&mut self) {
@@ -2808,6 +2896,8 @@ impl App {
         self.maybe_refresh_climate();
         self.maybe_refresh_power();
         self.poll_music();
+        #[cfg(feature = "strichliste")]
+        self.maybe_refresh_strichliste();
         self.throbber.calc_next();
         let clear_status = self
             .status
@@ -3037,6 +3127,8 @@ mod tests {
             },
             influx: crate::influx::Options::default(),
             soundboard: crate::soundboard::Options::default(),
+            #[cfg(feature = "strichliste")]
+            strichliste: crate::strichliste::Options::default(),
             graph_minutes: 60,
             graph_layout: crate::cli::GraphLayout::Table,
             music: crate::music::Options::default(),
@@ -3187,7 +3279,7 @@ mod tests {
 
     #[test]
     fn section_bits_are_unique() {
-        let mut seen = 0u16;
+        let mut seen = 0u32;
         for section in Section::ALL {
             assert_eq!(seen & section.bit(), 0);
             seen |= section.bit();
@@ -3223,6 +3315,8 @@ mod tests {
             },
             influx: crate::influx::Options::default(),
             soundboard: crate::soundboard::Options::default(),
+            #[cfg(feature = "strichliste")]
+            strichliste: crate::strichliste::Options::default(),
             graph_minutes: 60,
             graph_layout: crate::cli::GraphLayout::Table,
             music: crate::music::Options::default(),

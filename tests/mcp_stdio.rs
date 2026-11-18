@@ -119,6 +119,10 @@ fn real_stdio_keeps_startup_warnings_off_the_protocol_stream() {
             "power_status",
             "smoothiesaur_status",
             "status",
+            #[cfg(feature = "strichliste")]
+            "strichliste_balance",
+            #[cfg(feature = "strichliste")]
+            "strichliste_rank",
             "system_telinit",
             "white_light_apply",
             "white_light_cells",

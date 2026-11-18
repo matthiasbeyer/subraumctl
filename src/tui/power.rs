@@ -181,6 +181,8 @@ mod tests {
                 influx: Options::default(),
                 soundboard: crate::soundboard::Options::default(),
                 graph_minutes: 60,
+                #[cfg(feature = "strichliste")]
+                strichliste: crate::strichliste::Options::default(),
                 graph_layout: crate::cli::GraphLayout::Table,
                 music: crate::music::Options::default(),
                 verbose: 0,
@@ -256,7 +258,7 @@ mod tests {
         press(&mut app, KeyCode::Char('q'));
         app.zone = FocusZone::Sidebar;
         press(&mut app, KeyCode::End);
-        assert_eq!(app.section, Section::Soundboard);
+        assert_eq!(app.section, *Section::ALL.last().unwrap());
     }
 
     #[test]

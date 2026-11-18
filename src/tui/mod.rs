@@ -11,6 +11,8 @@ mod pizzamat;
 mod power;
 mod safe_mode;
 mod soundboard;
+#[cfg(feature = "strichliste")]
+mod strichliste;
 mod theme;
 mod traffic;
 mod ui;
@@ -53,6 +55,8 @@ pub struct TuiOptions {
     pub heizung: crate::heizung::Options,
     pub music: crate::music::Options,
     pub soundboard: crate::soundboard::Options,
+    #[cfg(feature = "strichliste")]
+    pub strichliste: crate::strichliste::Options,
     pub influx: crate::influx::Options,
     pub graph_minutes: u64,
     pub graph_layout: crate::cli::GraphLayout,
@@ -141,6 +145,20 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         soundboard_event_tx,
     );
     app.soundboard.tx = Some(soundboard_tx);
+    #[cfg(feature = "strichliste")]
+    let mut strichliste_events = {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (events, replies) = mpsc::unbounded_channel();
+        strichliste::spawn_worker(
+            app.options.strichliste.clone(),
+            app.options.dry_run,
+            rx,
+            events,
+        );
+        app.strichliste.tx = Some(tx);
+        app.maybe_refresh_strichliste();
+        replies
+    };
     app.maybe_refresh_climate();
     app.maybe_refresh_power();
     app.maybe_refresh_music();
@@ -176,6 +194,22 @@ pub async fn run(options: TuiOptions) -> Result<()> {
             Some(event) = climate_event_rx.recv() => app.handle_climate_event(event),
             Some(event) = power_event_rx.recv() => app.handle_power_event(event),
             Some(event) = graph_event_rx.recv() => app.handle_graph_event(event),
+            // A pending future keeps this select branch inert in builds without Strichliste.
+            Some(event) = async {
+                #[cfg(feature = "strichliste")]
+                {
+                    strichliste_events.recv().await
+                }
+                #[cfg(not(feature = "strichliste"))]
+                {
+                    std::future::pending::<Option<()>>().await
+                }
+            } => {
+                #[cfg(feature = "strichliste")]
+                app.handle_strichliste_event(event);
+                #[cfg(not(feature = "strichliste"))]
+                let _ = event;
+            },
             _ = ticker.tick() => app.on_tick(),
         }
 

@@ -21,6 +21,8 @@ pub mod pizzamat;
 pub mod power;
 pub mod smoothie;
 pub mod soundboard;
+#[cfg(feature = "strichliste")]
+pub mod strichliste;
 pub mod system;
 pub mod theme;
 pub mod white_light;
@@ -43,6 +45,8 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         Section::Power => power::draw(frame, area, app),
         Section::Music => music::draw(frame, area, app),
         Section::Soundboard => soundboard::draw(frame, area, app),
+        #[cfg(feature = "strichliste")]
+        Section::Strichliste => strichliste::draw(frame, area, app),
     }
 }
 

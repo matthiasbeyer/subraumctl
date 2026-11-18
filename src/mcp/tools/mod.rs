@@ -11,6 +11,8 @@ mod opt_in;
 mod pizzamat;
 mod power;
 mod reads;
+#[cfg(feature = "strichliste")]
+mod strichliste;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -108,6 +110,8 @@ pub(super) fn register<B: super::backend::Backend>(
     power::register(server, backend.clone())?;
     history::register(server, backend.clone())?;
     music::register(server, backend.clone())?;
+    #[cfg(feature = "strichliste")]
+    strichliste::register(server, backend.clone())?;
     pizzamat::register(server, backend.clone())?;
     reads::register(server, backend)?;
     add(

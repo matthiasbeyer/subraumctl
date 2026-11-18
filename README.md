@@ -22,6 +22,8 @@ Rust CLI and keyboard-driven TUI for the subraum MQTT control system.
 
 [Searchable Soundboard tab over EDI AMQP](docs/soundboard.md)
 
+[Strichliste 0.11.0 accounts, payments and transfers in the CLI, TUI and MCP](docs/strichliste.md)
+
 # Issues
 
 Issues are disabled. If you find an issue, send patches.
@@ -31,21 +33,23 @@ Issues are disabled. If you find an issue, send patches.
 TUI mouse interaction is optional and disabled by default. Build with
 `--features tui-mouse` to include it.
 
+Strichliste CLI and TUI are included by default. Build with `--features mcp`
+for its restricted MCP tools. Use `--no-default-features` to omit Strichliste.
+
 MCP server support is optional and disabled by default. Build with
 `--features mcp`, or `--features mcp,tui-mouse` to enable both features.
-These are the only package feature flags.
 
 # Release builds
 
 Every push to `master` (including merged pull requests) builds and tests native
 Linux binaries for x86_64 and aarch64, then publishes four `.tar.gz` archives and a
 `SHA256SUMS` file as a GitHub prerelease in this repository's **Releases** page.
-Each architecture has two variants, both with MCP support:
+Each architecture has two variants, both with MCP and Strichliste support:
 
 | Archive suffix | Enabled features |
 | --- | --- |
-| `-mcp.tar.gz` | `mcp` (no TUI mouse support) |
-| `-mcp-mouse.tar.gz` | `mcp,tui-mouse` |
+| `-mcp.tar.gz` | `strichliste,mcp` (no TUI mouse support) |
+| `-mcp-mouse.tar.gz` | `strichliste,mcp,tui-mouse` |
 
 All four builds must pass before publishing.
 

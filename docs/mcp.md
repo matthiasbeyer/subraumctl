@@ -88,6 +88,7 @@ Smoothiesaur `r`). These startup warnings also appear with `--quiet`/`RUST_LOG=o
 | `smoothiesaur` | `smoothiesaur_status` | `smoothiesaur_relay`, `smoothiesaur_laser`, `smoothiesaur_zero` | `x` |
 | `pizzamat` | `pizzamat_list`, `pizzamat_services` | `pizzamat_start`, `pizzamat_join`, `pizzamat_add`, `pizzamat_remove`, `pizzamat_clear`, `pizzamat_commit`, `pizzamat_lock`, `pizzamat_unlock`, `pizzamat_reset`, `pizzamat_set_default`, `pizzamat_service_add`, `pizzamat_service_remove` | `w` |
 | `music` | `music_status`, `music_stations` | `music_play`, `music_pause`, `music_next`, `music_previous`, `music_station` | `w` |
+| `strichliste` (build feature) | `strichliste_balance`, `strichliste_rank` | `strichliste_pay`, `strichliste_add` (also require `--strichliste-mcp-writes`) | `r` |
 | `status` | `status` | — | `r` |
 | `publish` | — | `publish` | `x` |
 
@@ -121,6 +122,15 @@ static station ids and names; `music_station` accepts
 `{"station":"groovesalad"}`. `music_play`, `music_pause`, `music_next` and
 `music_previous` take no arguments. The default MPD endpoint is
 `audiomaster:6600`; see [music playback and stations](music.md).
+
+Strichliste tools require `mcp` and the default-enabled `strichliste` build feature. The account
+and API URL are fixed by startup options/environment. Balance and rank return
+only the configured user's values; there are no recipient, search, other-user,
+transfer or history tools. Both payment tools are disabled by default and require
+**both** `strichliste = "w"` and `--strichliste-mcp-writes` (or
+`SUBRAUMCTL_STRICHLISTE_MCP_WRITES=true`). They accept only `{"amount":1.25}` in
+euros, and set the transaction comment to exactly `triggered by mcp`.
+See [Strichliste setup and API contract](strichliste.md).
 
 ### Climate and power history
 

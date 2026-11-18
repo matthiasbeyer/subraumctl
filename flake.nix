@@ -82,11 +82,20 @@
             cargoArtifacts = mcpArtifacts;
             cargoExtraArgs = mcpArgs.cargoExtraArgs;
           };
+          subraumctl-strichliste = mkPackage {
+            cargoExtraArgs = "--features strichliste";
+          };
+          subraumctl-mcp-strichliste = mkPackage {
+            cargoArtifacts = mcpArtifacts;
+            cargoExtraArgs = "--features mcp,strichliste";
+          };
         in
         {
           packages.default = subraumctl;
           packages.subraumctl = subraumctl;
           packages.subraumctl-mcp = subraumctl-mcp;
+          packages.subraumctl-strichliste = subraumctl-strichliste;
+          packages.subraumctl-mcp-strichliste = subraumctl-mcp-strichliste;
 
           apps.default = {
             type = "app";
@@ -113,6 +122,21 @@
             mcp-clippy = craneLib.cargoClippy (mcpArgs // {
               cargoArtifacts = mcpArtifacts;
               cargoClippyExtraArgs = "--all-targets -- -D warnings";
+            });
+
+            no-default-features-tests = craneLib.cargoTest (commonArgs // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = "--no-default-features";
+            });
+
+            all-features-tests = craneLib.cargoTest (commonArgs // {
+              cargoArtifacts = mcpArtifacts;
+              cargoExtraArgs = "--all-features";
+            });
+
+            all-features-clippy = craneLib.cargoClippy (commonArgs // {
+              cargoArtifacts = mcpArtifacts;
+              cargoClippyExtraArgs = "--all-features --all-targets -- -D warnings";
             });
           };
 

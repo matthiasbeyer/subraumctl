@@ -31,6 +31,8 @@ fn app(connect: bool) -> (App, UnboundedReceiver<Request>) {
             influx: crate::influx::Options::default(),
             soundboard: crate::soundboard::Options::default(),
             graph_minutes: 60,
+            #[cfg(feature = "strichliste")]
+            strichliste: crate::strichliste::Options::default(),
             graph_layout: crate::cli::GraphLayout::Table,
             verbose: 0,
             dry_run: false,

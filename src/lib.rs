@@ -28,6 +28,8 @@ pub mod pizzamat;
 pub mod power;
 pub mod smoothiesaur;
 pub mod soundboard;
+#[cfg(feature = "strichliste")]
+pub mod strichliste;
 pub mod tui;
 pub mod white_light;
 

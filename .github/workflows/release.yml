@@ -72,8 +72,8 @@ jobs:
           TARGET: ${{ matrix.target }}
           FEATURES: ${{ matrix.features }}
         run: |
-          cargo build --locked --release --target "$TARGET" --no-default-features --features "$FEATURES"
-          cargo test --locked --release --target "$TARGET" --no-default-features --features "$FEATURES"
+          cargo build --locked --release --target "$TARGET" --features "$FEATURES"
+          cargo test --locked --release --target "$TARGET" --features "$FEATURES"
           test "$(target/"$TARGET"/release/subraumctl --version)" = "subraumctl $RELEASE_VERSION"
 
       - name: Package release
@@ -123,7 +123,7 @@ jobs:
             gh release create "$tag" \
               --target "$GITHUB_SHA" \
               --title "subraumctl $RELEASE_VERSION" \
-              --notes "Automatic build from commit $GITHUB_SHA. Linux x86_64 and aarch64 binaries, built on Ubuntu 24.04. All binaries include MCP support: choose the mcp archive without mouse support or mcp-mouse with TUI mouse support. Requires glibc 2.39 or newer and OpenSSL 3." \
+              --notes "Automatic build from commit $GITHUB_SHA. Linux x86_64 and aarch64 binaries, built on Ubuntu 24.04. All binaries include MCP and Strichliste support: choose the mcp archive without mouse support or mcp-mouse with TUI mouse support. Requires glibc 2.39 or newer and OpenSSL 3." \
               --prerelease --draft --latest=false
           fi
           gh release upload "$tag" ./*.tar.gz SHA256SUMS --clobber

@@ -15,6 +15,18 @@ use crate::cli::GlobalArgs;
 use crate::mqtt::{self, MqttOptions};
 
 pub(super) trait Backend: Send + Sync + 'static {
+    #[cfg(feature = "strichliste")]
+    fn strichliste_mcp_writes(&self) -> bool {
+        false
+    }
+    #[cfg(feature = "strichliste")]
+    fn strichliste(
+        &self,
+        _request: crate::strichliste::Request,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<Value>> + Send {
+        async { Err(eyre!("Strichliste is not configured")) }
+    }
     fn history(
         &self,
         domain: crate::history::Domain,
@@ -66,6 +78,10 @@ pub(super) struct DeviceBackend {
     influx: crate::influx::Options,
     pizzamat: crate::pizzamat::Options,
     music: crate::music::Options,
+    #[cfg(feature = "strichliste")]
+    strichliste: crate::strichliste::Options,
+    #[cfg(feature = "strichliste")]
+    strichliste_mcp_writes: bool,
     http: reqwest::Client,
     dry_run: bool,
     wait: Duration,
@@ -91,6 +107,10 @@ impl DeviceBackend {
             influx: crate::influx::Options::from_global(global),
             pizzamat: crate::pizzamat::Options::from_global(global),
             music: crate::music::Options::from_global(global),
+            #[cfg(feature = "strichliste")]
+            strichliste: crate::strichliste::Options::from_global(global),
+            #[cfg(feature = "strichliste")]
+            strichliste_mcp_writes: global.strichliste_mcp_writes,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()?,
@@ -102,6 +122,30 @@ impl DeviceBackend {
 }
 
 impl Backend for DeviceBackend {
+    #[cfg(feature = "strichliste")]
+    fn strichliste_mcp_writes(&self) -> bool {
+        self.strichliste_mcp_writes
+    }
+
+    #[cfg(feature = "strichliste")]
+    async fn strichliste(
+        &self,
+        request: crate::strichliste::Request,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value> {
+        ensure!(
+            request.value()?.is_none() || self.strichliste_mcp_writes,
+            "Strichliste MCP writes are disabled"
+        );
+        let _guard = tokio::select! {
+            guard = self.gate.lock() => guard,
+            _ = context.ct.cancelled() => return Err(eyre!("request cancelled")),
+        };
+        ensure!(!context.ct.is_cancelled(), "request cancelled");
+        // Finish the bounded transaction once started; never replay a payment.
+        crate::strichliste::execute_mcp(self.strichliste.clone(), &request, self.dry_run).await
+    }
+
     async fn history(
         &self,
         domain: crate::history::Domain,

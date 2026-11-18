@@ -298,6 +298,8 @@ mod tests {
                 },
                 influx: crate::influx::Options::default(),
                 graph_minutes: 60,
+                #[cfg(feature = "strichliste")]
+                strichliste: crate::strichliste::Options::default(),
                 graph_layout: crate::cli::GraphLayout::Table,
                 verbose: 0,
                 dry_run: false,
@@ -443,8 +445,14 @@ mod tests {
         assert_eq!(app.soundboard.focus, 0);
         assert!(!app.soundboard.truncated);
         assert_eq!(Section::Soundboard.bit(), 0x8000);
-        assert_eq!(Section::ALL.len(), 16);
+        assert_eq!(
+            Section::ALL.len(),
+            16 + cfg!(feature = "strichliste") as usize
+        );
+        #[cfg(not(feature = "strichliste"))]
         assert_eq!(Section::Soundboard.next(), Section::Overview);
+        #[cfg(feature = "strichliste")]
+        assert_eq!(Section::Soundboard.next(), Section::Strichliste);
         let entry = soundboard_traffic(
             &Request::play("literal").unwrap(),
             TrafficDirection::Tx,

@@ -153,3 +153,5 @@ mod tests;
 mod history_tests;
 #[cfg(test)]
 mod music_tests;
+#[cfg(all(test, feature = "strichliste"))]
+mod strichliste_tests;
