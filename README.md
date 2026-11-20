@@ -56,8 +56,10 @@ All four builds must pass before publishing.
 Versions use the Cargo package version followed by `-g` and the first 12
 characters of the commit hash, for example `0.1.0-g7291030abcde`, with a
 `v0.1.0-g7291030abcde` release tag. This is a SemVer prerelease, and the binary's
-`--version` reports the same version. Version stamping happens only in the
-release build checkout; the committed Cargo version remains the base version.
+`--version` reports the same version. Development builds also include the
+current commit hash in `--version` when built from a Git checkout. Version
+stamping happens only in the release build checkout; the committed Cargo version
+remains the base version.
 
 Archives contain `subraumctl` and this README, preserving the binary's executable
 permissions. The binaries require Linux with glibc 2.39 or newer and OpenSSL 3,
