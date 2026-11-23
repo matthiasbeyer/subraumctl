@@ -18,7 +18,7 @@ use crate::smoothiesaur::DEFAULT_SMOOTHIE_URL;
 #[derive(Parser, Debug)]
 #[command(
     name = "subraumctl",
-    version,
+    version = env!("SUBRAUMCTL_VERSION"),
     about = "Control the subraum over MQTT and EDI AMQP",
     long_about = "subraumctl controls the subraum lights, outlets, alerts, animation knobs and \
 smoothiesaur over MQTT (TCP) and HTTP, heating and Pizzamat food orders over EDI AMQP, \
