@@ -71,6 +71,51 @@ pub fn safety_bit(payload: &str, mask: u32) -> Option<bool> {
     Some((value & mask) == 0)
 }
 
+/// Hardware status published by a white-light cell on `light/esp/state`.
+///
+/// Wire format (see the firmware's `StatusPacket`):
+/// `S:<12 hex mac>,<2 hex cold>,<2 hex warm>,<4 hex position>\r\n`
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WhiteLightLevels {
+    pub id: String,
+    pub warm: u8,
+    pub cold: u8,
+}
+
+pub fn parse_white_light_state(payload: &str) -> Option<WhiteLightLevels> {
+    let rest = payload.trim().strip_prefix("S:")?;
+    let mut fields = rest.split(',');
+    let mac = fields.next()?;
+    let cold = fields.next()?;
+    let warm = fields.next()?;
+    if mac.len() != 12 || !mac.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return None;
+    }
+    if cold.len() != 2 || warm.len() != 2 {
+        return None;
+    }
+    Some(WhiteLightLevels {
+        id: format!("LM3_{}", mac.to_ascii_uppercase()),
+        warm: u8::from_str_radix(warm, 16).ok()?,
+        cold: u8::from_str_radix(cold, 16).ok()?,
+    })
+}
+
+/// Parses the `w <warm> c <cold> ` request payload sent to a cell.
+pub fn parse_white_light_request(payload: &str) -> Option<(u8, u8)> {
+    let mut tokens = payload.split_whitespace();
+    let (mut warm, mut cold) = (None, None);
+    while let Some(key) = tokens.next() {
+        let value = tokens.next()?.parse::<u8>().ok()?;
+        match key {
+            "w" | "warm" => warm = Some(value),
+            "c" | "cold" => cold = Some(value),
+            _ => return None,
+        }
+    }
+    Some((warm?, cold?))
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AlertCondition {
     Green,
@@ -197,6 +242,26 @@ mod tests {
         assert_eq!(safety_bit("0", 8), Some(true));
         assert_eq!(safety_bit("ff", 8), Some(false));
         assert_eq!(safety_bit("zz", 8), None);
+    }
+
+    #[test]
+    fn white_light_state_is_decoded() {
+        let levels = parse_white_light_state("S:a020a63498e7,80,FF,0200\r\n").unwrap();
+        assert_eq!(levels.id, "LM3_A020A63498E7");
+        assert_eq!(levels.cold, 0x80);
+        assert_eq!(levels.warm, 0xff);
+        assert!(parse_white_light_state("A:A020A63498E7,1\r\n").is_none());
+        assert!(parse_white_light_state("S:A020A63498E7,80\r\n").is_none());
+        assert!(parse_white_light_state("S:A020A63498E,80,FF,0200\r\n").is_none());
+        assert!(parse_white_light_state("S:A020A63498E7,8G,FF,0200\r\n").is_none());
+    }
+
+    #[test]
+    fn white_light_requests_are_decoded() {
+        assert_eq!(parse_white_light_request("w 12 c 200 "), Some((12, 200)));
+        assert_eq!(parse_white_light_request("c 1 w 2"), Some((2, 1)));
+        assert_eq!(parse_white_light_request("w 12"), None);
+        assert_eq!(parse_white_light_request("R:\r\n"), None);
     }
 
     #[test]

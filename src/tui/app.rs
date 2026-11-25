@@ -18,11 +18,16 @@ use crate::action::{
     Action, AudioRoom, ControlCommand, DmxAnimation, DmxGroup, Outlet, RadiationTarget,
     SmoothieRelay, SobSound, TOPIC_ALERT_CONDITION, TOPIC_AUDIO_ATTACH, TOPIC_AUDIO_DETACH,
     TOPIC_AUDIO_MUTE, TOPIC_AUDIO_UNMUTE, TOPIC_AUDIO_VOLUME, TOPIC_KNOB_GET_PREFIX,
-    TOPIC_KNOB_SET_PREFIX, TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_STATUS_PREFIX, Transport,
+    TOPIC_KNOB_SET_PREFIX, TOPIC_SMOOTHIE_PREFIX, TOPIC_WHITE_LIGHT_REQUEST_ALL,
+    TOPIC_WHITE_LIGHT_REQUEST_PREFIX, TOPIC_WHITE_LIGHT_STATE, TOPIC_WHITE_LIGHT_STATUS_PREFIX,
+    Transport, WHITE_LIGHT_REQUEST_STATE_PAYLOAD,
 };
 use crate::cli::TuiView;
 use crate::color::{Theme, ThemePreset, ThemeRole};
-use crate::decode::{AlertCondition, AlertState, parse_alert, parse_bool};
+use crate::decode::{
+    AlertCondition, AlertState, parse_alert, parse_bool, parse_white_light_request,
+    parse_white_light_state,
+};
 use crate::knob::{KNOB_SPECS, Knob, format_value};
 use crate::mqtt::{MqttCommand, MqttEvent};
 use crate::smoothiesaur::{HttpCommand, HttpEvent, SmoothieStatus};
@@ -246,6 +251,47 @@ pub struct WhiteLightState {
     pub focus: usize,
     pub filter: String,
     pub status: [Option<bool>; 15],
+    /// Last known `(warm, cold)` level of every cell.
+    pub levels: [Option<(u8, u8)>; 15],
+    /// The sliders were moved by hand and must not follow the cells anymore
+    /// until the selection changes.
+    pub dirty: bool,
+}
+
+impl WhiteLightState {
+    /// Average `(warm, cold)` level of the selected cells with a known level.
+    pub fn selected_average(&self) -> Option<(u8, u8)> {
+        let (mut warm, mut cold, mut count) = (0u32, 0u32, 0u32);
+        for (index, level) in self.levels.iter().enumerate() {
+            if let (true, Some((w, c))) = (self.selected[index], level) {
+                warm += *w as u32;
+                cold += *c as u32;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        Some((
+            ((warm + count / 2) / count) as u8,
+            ((cold + count / 2) / count) as u8,
+        ))
+    }
+
+    fn sync_sliders(&mut self) {
+        if self.dirty {
+            return;
+        }
+        if let Some((warm, cold)) = self.selected_average() {
+            self.warm = warm;
+            self.cold = cold;
+        }
+    }
+
+    fn selection_changed(&mut self) {
+        self.dirty = false;
+        self.sync_sliders();
+    }
 }
 
 pub struct OutletsState {
@@ -448,6 +494,8 @@ impl App {
                 focus: 0,
                 filter: String::new(),
                 status: [None; 15],
+                levels: [None; 15],
+                dirty: false,
             },
             outlets: OutletsState {
                 row: 0,
@@ -842,6 +890,7 @@ impl App {
                     let ratio = mouse.column.saturating_sub(gauges[0].x.saturating_add(1)) as f64
                         / gauges[0].width.saturating_sub(2).max(1) as f64;
                     self.white_light.warm = (ratio.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    self.white_light.dirty = true;
                 } else if gauges[1].contains(point)
                     || (dragging && self.white_light.focus == 1 && rows[0].contains(point))
                 {
@@ -849,6 +898,7 @@ impl App {
                     let ratio = mouse.column.saturating_sub(gauges[1].x.saturating_add(1)) as f64
                         / gauges[1].width.saturating_sub(2).max(1) as f64;
                     self.white_light.cold = (ratio.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    self.white_light.dirty = true;
                 } else if rows[1].contains(point) {
                     self.apply_white_light();
                 } else if rows[2].contains(point) {
@@ -869,10 +919,12 @@ impl App {
                             self.white_light.focus = 3 + *cell;
                             if double_click {
                                 self.white_light.selected[*cell] = true;
+                                self.white_light.selection_changed();
                                 self.apply_white_light();
                             } else {
                                 self.white_light.selected[*cell] =
                                     !self.white_light.selected[*cell];
+                                self.white_light.selection_changed();
                             }
                         }
                     }
@@ -1469,6 +1521,7 @@ impl App {
                 KeyCode::Enter => {
                     if let Ok(value) = input.value().trim().parse::<f64>() {
                         self.white_light.warm = value.round().clamp(0.0, 255.0) as u8;
+                        self.white_light.dirty = true;
                     }
                 }
                 _ => {
@@ -1481,6 +1534,7 @@ impl App {
                 KeyCode::Enter => {
                     if let Ok(value) = input.value().trim().parse::<f64>() {
                         self.white_light.cold = value.round().clamp(0.0, 255.0) as u8;
+                        self.white_light.dirty = true;
                     }
                 }
                 _ => {
@@ -1719,8 +1773,14 @@ impl App {
             }
             KeyCode::Home => self.set_white_light_bound(false),
             KeyCode::End => self.set_white_light_bound(true),
-            KeyCode::Char('a') => self.white_light.selected = [true; 15],
-            KeyCode::Char('n') => self.white_light.selected = [false; 15],
+            KeyCode::Char('a') => {
+                self.white_light.selected = [true; 15];
+                self.white_light.selection_changed();
+            }
+            KeyCode::Char('n') => {
+                self.white_light.selected = [false; 15];
+                self.white_light.selection_changed();
+            }
             KeyCode::Char('/') => self.start_search(),
             KeyCode::Char(' ') => self.toggle_white_light_focus(),
             KeyCode::Enter => match self.white_light.focus {
@@ -1743,6 +1803,7 @@ impl App {
                     if let Some(index) = focus.checked_sub(3) {
                         if index < 15 {
                             self.white_light.selected[index] = !self.white_light.selected[index];
+                            self.white_light.selection_changed();
                         }
                     }
                 }
@@ -1763,6 +1824,7 @@ impl App {
                 if let Some(index) = focus.checked_sub(3) {
                     if index < 15 {
                         self.white_light.selected[index] = !self.white_light.selected[index];
+                        self.white_light.selection_changed();
                     }
                 }
             }
@@ -1773,15 +1835,34 @@ impl App {
         match self.white_light.focus {
             0 => self.white_light.warm = adjust_u8(self.white_light.warm, delta),
             1 => self.white_light.cold = adjust_u8(self.white_light.cold, delta),
-            _ => {}
+            _ => return,
         }
+        self.white_light.dirty = true;
     }
 
     fn set_white_light_bound(&mut self, maximum: bool) {
         match self.white_light.focus {
             0 => self.white_light.warm = if maximum { 255 } else { 0 },
             1 => self.white_light.cold = if maximum { 255 } else { 0 },
-            _ => {}
+            _ => return,
+        }
+        self.white_light.dirty = true;
+    }
+
+    fn request_white_light_state(&mut self) {
+        if self.options.dry_run || !self.connection.is_connected() {
+            return;
+        }
+        if self
+            .mqtt_tx
+            .send(MqttCommand::Publish {
+                topic: TOPIC_WHITE_LIGHT_REQUEST_ALL.to_string(),
+                payload: WHITE_LIGHT_REQUEST_STATE_PAYLOAD.to_string(),
+                retain: false,
+            })
+            .is_err()
+        {
+            self.set_status("MQTT supervisor stopped", StatusKind::Error);
         }
     }
 
@@ -2654,6 +2735,7 @@ impl App {
                 };
                 self.set_status("connected", StatusKind::Success);
                 tracing::info!("mqtt connected (generation {generation})");
+                self.request_white_light_state();
             }
             MqttEvent::ConnectionLost { generation, reason } => {
                 if generation == self.mqtt_generation {
@@ -2702,6 +2784,14 @@ impl App {
                 if topic == crate::action::TOPIC_OUTLET {
                     if let Some((index, on)) = outlet_from_payload(&payload) {
                         self.outlets.last_sent[index] = Some(on);
+                    }
+                }
+                if let Some(id) = topic.strip_prefix(TOPIC_WHITE_LIGHT_REQUEST_PREFIX) {
+                    if let (Some(index), Some(levels)) = (
+                        white_light::index_of(id),
+                        parse_white_light_request(&payload),
+                    ) {
+                        self.white_light.levels[index] = Some(levels);
                     }
                 }
                 if let Some(name) = topic.strip_prefix(TOPIC_KNOB_SET_PREFIX) {
@@ -2762,6 +2852,15 @@ impl App {
         if let Some(id) = topic.strip_prefix(TOPIC_WHITE_LIGHT_STATUS_PREFIX) {
             if let Some(index) = white_light::index_of(id) {
                 self.white_light.status[index] = Some(parse_bool(payload));
+            }
+        }
+
+        if topic == TOPIC_WHITE_LIGHT_STATE {
+            if let Some(levels) = parse_white_light_state(payload) {
+                if let Some(index) = white_light::index_of(&levels.id) {
+                    self.white_light.levels[index] = Some((levels.warm, levels.cold));
+                    self.white_light.sync_sliders();
+                }
             }
         }
 
@@ -3204,7 +3303,6 @@ mod tests {
         assert_eq!(next_in(&[], 3, true), 3);
     }
 
-    #[cfg(feature = "tui-mouse")]
     fn test_app() -> App {
         let (mqtt_tx, _) = tokio::sync::mpsc::unbounded_channel();
         let (http_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -3392,6 +3490,49 @@ mod tests {
             Rect::new(0, 0, 100, 40),
         );
         assert!(app.white_light.warm > first);
+    }
+
+    #[test]
+    fn white_light_sliders_follow_the_average_of_selected_cells() {
+        let mut app = test_app();
+        app.handle_message("light/esp/state", "S:A020A63498E7,00,10,0200\r\n");
+        app.handle_message("light/esp/state", "S:A020A6349898,40,31,0200\r\n");
+        assert_eq!((app.white_light.warm, app.white_light.cold), (0, 0));
+
+        app.white_light.selected[0] = true;
+        app.white_light.selection_changed();
+        assert_eq!((app.white_light.warm, app.white_light.cold), (0x10, 0x00));
+
+        app.white_light.selected[1] = true;
+        app.white_light.selection_changed();
+        assert_eq!((app.white_light.warm, app.white_light.cold), (0x21, 0x20));
+
+        app.handle_message("light/esp/state", "S:A020A6349898,40,51,0200\r\n");
+        assert_eq!(app.white_light.warm, 0x31);
+    }
+
+    #[test]
+    fn manual_slider_changes_are_not_overwritten_by_status_updates() {
+        let mut app = test_app();
+        app.white_light.selected[0] = true;
+        app.white_light.focus = 0;
+        app.adjust_white_light(5);
+        app.handle_message("light/esp/state", "S:A020A63498E7,00,80,0200\r\n");
+        assert_eq!(app.white_light.warm, 5);
+
+        app.white_light.selection_changed();
+        assert_eq!(app.white_light.warm, 0x80);
+    }
+
+    #[test]
+    fn published_white_light_requests_update_the_known_levels() {
+        let mut app = test_app();
+        app.handle_mqtt_event(MqttEvent::Published {
+            topic: "light/esp/request/LM3_A020A63498E7".to_string(),
+            payload: "w 12 c 34 ".to_string(),
+            retain: false,
+        });
+        assert_eq!(app.white_light.levels[0], Some((12, 34)));
     }
 
     #[test]
