@@ -13,7 +13,7 @@ use crate::action::{
     TOPIC_AUDIO_UNMUTE, TOPIC_AUDIO_VOLUME, TOPIC_DMX, TOPIC_KNOB_GET_PREFIX,
     TOPIC_KNOB_SET_PREFIX, TOPIC_OUTLET, TOPIC_RADIATION_HACK, TOPIC_RADIATION_MAKE,
     TOPIC_SMOOTHIE_PREFIX, TOPIC_SOB, TOPIC_TELINIT, TOPIC_WHITE_LIGHT_REQUEST_PREFIX,
-    TOPIC_WHITE_LIGHT_STATUS_PREFIX,
+    TOPIC_WHITE_LIGHT_STATE, TOPIC_WHITE_LIGHT_STATUS_PREFIX,
 };
 use crate::color::Theme;
 use crate::tui::app::Section;
@@ -207,6 +207,7 @@ pub fn sections_for_topic(topic: &str) -> u32 {
         mask |= Section::Lighting.bit();
     } else if topic.starts_with(TOPIC_WHITE_LIGHT_REQUEST_PREFIX)
         || topic.starts_with(TOPIC_WHITE_LIGHT_STATUS_PREFIX)
+        || topic == TOPIC_WHITE_LIGHT_STATE
     {
         mask |= Section::WhiteLight.bit();
     } else if topic == TOPIC_OUTLET {

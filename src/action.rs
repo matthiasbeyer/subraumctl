@@ -23,6 +23,11 @@ pub const TOPIC_KNOB_GET_PREFIX: &str = "knob/get/";
 pub const TOPIC_KNOB_SET_PREFIX: &str = "knob/set/";
 pub const TOPIC_WHITE_LIGHT_REQUEST_PREFIX: &str = "light/esp/request/";
 pub const TOPIC_WHITE_LIGHT_STATUS_PREFIX: &str = "light/esp/status/";
+pub const TOPIC_WHITE_LIGHT_STATE: &str = "light/esp/state";
+/// Asks every cell to publish its hardware status (`S:` packet) on
+/// [`TOPIC_WHITE_LIGHT_STATE`].
+pub const TOPIC_WHITE_LIGHT_REQUEST_ALL: &str = "light/esp/request/all";
+pub const WHITE_LIGHT_REQUEST_STATE_PAYLOAD: &str = "R:\r\n";
 pub const TOPIC_AUDIO_MUTE: &str = "edi/cmd/mute";
 pub const TOPIC_AUDIO_UNMUTE: &str = "edi/cmd/unmute";
 pub const TOPIC_AUDIO_DETACH: &str = "edi/cmd/amd";

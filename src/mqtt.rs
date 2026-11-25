@@ -17,6 +17,7 @@ use crate::action::TOPIC_ALERT_CONDITION;
 pub const STATUS_TOPICS: &[&str] = &[
     TOPIC_ALERT_CONDITION,
     "light/esp/status/#",
+    "light/esp/state",
     "knob/get/#",
     "smoothie/#",
 ];
